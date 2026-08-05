@@ -1,13 +1,28 @@
-type Shape =
-  | { kind: "Circle"; radius: number }
-  | { kind: "Square"; side: number };
+// zts demo: all four locked features in one file.
+import { type Result, Ok, Err, map } from "@zts/core";
 
-declare const shape: Shape;
+enum Shape {
+  Circle { radius: number },
+  Square { side: number },
+}
 
-const area = match (shape) {
-  Circle { radius } => 3.14159 * radius ** 2,
-  Square { side } => side ** 2,
+function area(s: Shape): number {
+  return match (s) {
+    Circle { radius } => {
+      const r2 = radius * radius;
+      3.14159 * r2
+    },
+    Square { side } => side ** 2,
+  };
+}
+
+function safeArea(s: Shape | null): Result<number, string> {
+  return if (s === null) { Err("no shape") } else { Ok(area(s)) };
+}
+
+const msg = match (map(safeArea(Shape.Circle(2)), (a) => a.toFixed(2))) {
+  Ok { value } => `area: ${value}`,
+  Err { error } => `oops: ${error}`,
 };
 
-const greet = (name: string): string => `hello, ${name}`;
-console.log(greet("zts"), area);
+console.log(msg);
