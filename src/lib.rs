@@ -18,7 +18,7 @@ use swc_common::{
 use swc_ecma_ast::Program;
 use swc_ecma_codegen::{Config, Emitter, text_writer::JsWriter};
 use swc_ecma_parser::{Lexer, Parser, StringInput, Syntax, TsSyntax};
-use swc_ecma_transforms_base::{hygiene::hygiene, resolver};
+use swc_ecma_transforms_base::{fixer::fixer, hygiene::hygiene, resolver};
 
 /// Result of compiling one `.zts` module.
 #[derive(Debug)]
@@ -140,6 +140,11 @@ pub fn compile(
         program.mutate(resolver(unresolved_mark, top_level_mark, true));
         program.mutate(lower::lower());
         program.mutate(hygiene());
+        // fixer LAST (swc's canonical order): stock codegen does not compute
+        // parenthesization from precedence — without this pass, a lowered
+        // ternary spliced into an operator slot emits `-c ? 1 : 2` style
+        // miscompiles that tsc cannot see.
+        program.mutate(fixer(Some(&comments)));
     });
 
     let module = program.expect_module();

@@ -1,0 +1,8 @@
+declare const c: boolean;
+
+export const a1 = if (c) { 1 } else { 2 } + 1;
+export const a2 = -if (c) { 1 } else { 2 };
+export const a3 = if (c) { [1] } else { [2] }[0];
+export const a4 = if (c) { 2 } else { 3 } ** 2;
+export const a5 = !if (c) { true } else { false };
+export const a6 = if (c) { 1 } else { 2 } * if (c) { 3 } else { 4 };

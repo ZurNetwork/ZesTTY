@@ -1,0 +1,12 @@
+// Enum expansions hoist: use-before-declaration works, like TS enum / Rust.
+export const first: Shape = Shape.Circle(1);
+
+enum Shape {
+  Circle { radius: number },
+  Square { side: number },
+}
+
+export const second = match (first) {
+  Circle { radius } => radius,
+  Square { side } => side,
+};

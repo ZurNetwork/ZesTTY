@@ -276,13 +276,48 @@ fn enum_wrong_factory_arg_fails_tsc() {
 }
 
 #[test]
+fn if_expr_precedence_passes_tsc() {
+    let (ts_path, _) = compile_to("if_expr_precedence.zts", "exit_if_prec.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected precedence fixture:\n{text}");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("(c ? 1 : 2) + 1") || code.contains("(c ? 1 : 2)+1"),
+        "lowered ternary must be parenthesized inside operators:\n{code}"
+    );
+}
+
+#[test]
+fn generated_js_runs_with_correct_semantics() {
+    // tsc cannot see precedence miscompiles (`-c ? 1 : 2` typechecks); only
+    // executing the output proves the VALUES are right.
+    let (ts_path, _) = compile_to("exec_semantics.zts", "exit_exec.ts");
+    let out = Command::new("node")
+        .arg(&ts_path)
+        .output()
+        .expect("failed to spawn node");
+    assert!(
+        out.status.success(),
+        "generated code produced wrong runtime values:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
 fn result_from_core_composes_with_match() {
     // The whole point: @zts/core's Result + expression-if + match, one
     // file, verified by tsc end-to-end (feature #2's exit test).
     let (ts_path, _) = compile_to("result_match.zts", "exit_result.ts");
     let (ok, text) = tsc_with(
         &ts_path,
-        &["--strict", "--module", "esnext", "--moduleResolution", "bundler"],
+        &[
+            "--strict",
+            "--module",
+            "esnext",
+            "--moduleResolution",
+            "bundler",
+        ],
     );
     assert!(ok, "tsc rejected Result+match composition:\n{text}");
 
@@ -297,9 +332,18 @@ fn result_from_core_composes_with_match() {
     std::fs::write(&broken_path, broken).unwrap();
     let (ok, text) = tsc_with(
         &broken_path,
-        &["--strict", "--module", "esnext", "--moduleResolution", "bundler"],
+        &[
+            "--strict",
+            "--module",
+            "esnext",
+            "--moduleResolution",
+            "bundler",
+        ],
     );
-    assert!(!ok, "keystone must reject a Result match missing its Err arm");
+    assert!(
+        !ok,
+        "keystone must reject a Result match missing its Err arm"
+    );
     assert!(text.contains("TS2345"), "unexpected failure:\n{text}");
 }
 

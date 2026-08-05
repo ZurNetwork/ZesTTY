@@ -1,0 +1,16 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/if_expr_precedence.zts
+---
+declare const c: boolean;
+export const a1 = (c ? 1 : 2) + 1;
+export const a2 = -(c ? 1 : 2);
+export const a3 = (c ? [
+    1
+] : [
+    2
+])[0];
+export const a4 = (c ? 2 : 3) ** 2;
+export const a5 = !(c ? true : false);
+export const a6 = (c ? 1 : 2) * (c ? 3 : 4);

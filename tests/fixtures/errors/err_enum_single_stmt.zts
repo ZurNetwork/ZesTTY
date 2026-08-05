@@ -1,0 +1,3 @@
+declare const c: boolean;
+
+if (c) enum E { A { v: number } }

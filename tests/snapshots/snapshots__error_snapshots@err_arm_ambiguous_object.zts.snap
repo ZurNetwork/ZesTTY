@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_arm_ambiguous_object.zts
+---
+error: this match arm body is ambiguous between a block and an object literal; write `({ a })` for an object literal, or make the block unambiguous with a statement
+ --> tests/fixtures/errors/err_arm_ambiguous_object.zts:5:17
+  |
+5 |   A { a, b } => { a, b },
+  |                 ^^^^^^^^

@@ -1,0 +1,38 @@
+// Executed by tests/tsc_exit.rs under node: every zts construct here must
+// produce the RIGHT VALUE at runtime, not merely typecheck. Guards against
+// precedence miscompiles that tsc cannot see.
+
+function expect(name: string, got: unknown, want: unknown): void {
+  if (got !== want) {
+    throw new globalThis.Error(`${name}: got ${String(got)}, want ${String(want)}`);
+  }
+}
+
+const c = true as boolean;
+
+expect("plus", if (c) { 1 } else { 2 } + 1, 2);
+expect("neg", -if (c) { 1 } else { 2 }, -1);
+expect("index", if (c) { [7] } else { [9] }[0], 7);
+expect("pow", if (c) { 2 } else { 3 } ** 2, 4);
+expect("not", !if (c) { true } else { false }, false);
+expect("mul", if (c) { 1 } else { 2 } * if (c) { 3 } else { 4 }, 3);
+
+enum Shape {
+  Circle { radius: number },
+  Square { side: number },
+}
+
+const sq = Shape.Square(3);
+const area = match (sq) {
+  Circle { radius } => {
+    const r2 = radius * radius;
+    3 * r2
+  },
+  Square { side } => side ** 2,
+};
+expect("match", area, 9);
+
+const graded = if (area > 100) { "big" } else if (area > 5) { "mid" } else { "small" };
+expect("chain", graded, "mid");
+
+console.log("exec_semantics: all assertions passed");

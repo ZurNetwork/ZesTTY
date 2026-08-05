@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_export_default_enum.zts
+---
+error: `export default enum` is not supported in zts (an enum lowers to a type alias plus a const); use a named `export enum` instead
+ --> tests/fixtures/errors/err_export_default_enum.zts:1:16
+  |
+1 | export default enum Shape {
+  |                ^^^^

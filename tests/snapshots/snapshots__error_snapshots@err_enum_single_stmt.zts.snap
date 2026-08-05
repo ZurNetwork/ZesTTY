@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_enum_single_stmt.zts
+---
+error: a zts enum lowers to two declarations and cannot be used in a single-statement position; wrap it in a block or move it out
+ --> tests/fixtures/errors/err_enum_single_stmt.zts:3:8
+  |
+3 | if (c) enum E { A { v: number } }
+  |        ^^^^

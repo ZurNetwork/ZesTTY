@@ -1,0 +1,8 @@
+type S = { kind: "A"; a: number; b: number };
+declare const s: S;
+
+const r = match (s) {
+  A { a, b } => { a, b },
+};
+
+void r;

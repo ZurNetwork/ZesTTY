@@ -9,7 +9,7 @@ import {
   is_err,
   unwrap,
   unwrap_or,
-} from "../index.ts";
+} from "../dist/index.js";
 
 test("Ok/Err use the kind discriminant", () => {
   assert.deepEqual(Ok(2), { kind: "Ok", value: 2 });

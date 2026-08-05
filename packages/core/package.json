@@ -3,12 +3,20 @@
   "version": "0.1.0",
   "description": "zts runtime core: Result<T, E> with Ok/Err constructors and map/map_err combinators, using the zts `kind` discriminant convention.",
   "type": "module",
-  "main": "index.ts",
-  "types": "index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
-    ".": "./index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "test": "node --test && ../../node_modules/.bin/tsc --noEmit --strict index.ts"
+    "build": "../../node_modules/.bin/tsc index.ts --outDir dist --declaration --module esnext --target es2022 --strict",
+    "pretest": "npm run build",
+    "test": "node --test"
   }
 }

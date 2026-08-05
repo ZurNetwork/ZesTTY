@@ -217,7 +217,8 @@ impl Visit for Checker<'_> {
         // Statement-free chains lower to ternaries, where await/yield stay
         // legal. Chains with statements lower to a synchronous IIFE, so
         // suspension anywhere in the chain (tests included — they evaluate
-        // inside the IIFE) must be rejected.
+        // inside the IIFE) must be rejected. Run the suspender ONCE for the
+        // whole chain, from its root.
         if crate::lower::if_chain_has_stmts(i) {
             let mut suspender = SuspenderCheck {
                 checker: self,
@@ -225,7 +226,37 @@ impl Visit for Checker<'_> {
             };
             i.visit_with(&mut suspender);
         }
-        i.visit_children_with(self);
+
+        // Walk the chain ITERATIVELY, charging one depth unit per link:
+        // `ZtsIfAlt::If` links are not `Expr`s, so the visit_expr guard
+        // never sees them — without this, a long else-if chain sails past
+        // MAX_EXPR_DEPTH and stack-overflows the recursive passes.
+        let mut link = i;
+        let mut charged = 0usize;
+        loop {
+            charged += 1;
+            self.expr_depth += 1;
+            if self.expr_depth > MAX_EXPR_DEPTH {
+                if !self.depth_reported {
+                    self.depth_reported = true;
+                    self.err(
+                        link.span,
+                        &format!("expression nesting exceeds the zts limit of {MAX_EXPR_DEPTH}"),
+                    );
+                }
+                break;
+            }
+            link.test.visit_with(self);
+            link.cons.visit_with(self);
+            match &link.alt {
+                ZtsIfAlt::Block(b) => {
+                    b.visit_with(self);
+                    break;
+                }
+                ZtsIfAlt::If(next) => link = next,
+            }
+        }
+        self.expr_depth -= charged;
     }
 
     fn visit_zts_enum_decl(&mut self, e: &ZtsEnumDecl) {

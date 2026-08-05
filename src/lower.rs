@@ -53,7 +53,7 @@
 //! runs after lowering renames on collision.
 
 use swc_atoms::atom;
-use swc_common::{DUMMY_SP, Spanned, SyntaxContext, util::take::Take};
+use swc_common::{DUMMY_SP, Span, Spanned, SyntaxContext, util::take::Take};
 use swc_ecma_ast::*;
 use swc_ecma_utils::private_ident;
 use swc_ecma_visit::{VisitMut, VisitMutWith, visit_mut_pass};
@@ -391,28 +391,44 @@ fn script_insert_index(stmts: &[Stmt]) -> usize {
 
 /// Does any block in this if-expression chain carry statements? Statement-
 /// free chains lower to ternaries; anything else needs the IIFE.
+/// Iterative: chains can be long, and recursion here would undercut the
+/// semantic depth guard.
 pub(crate) fn if_chain_has_stmts(i: &ZtsIfExpr) -> bool {
-    if !i.cons.stmts.is_empty() {
-        return true;
-    }
-    match &i.alt {
-        ZtsIfAlt::Block(b) => !b.stmts.is_empty(),
-        ZtsIfAlt::If(next) => if_chain_has_stmts(next),
+    let mut link = i;
+    loop {
+        if !link.cons.stmts.is_empty() {
+            return true;
+        }
+        match &link.alt {
+            ZtsIfAlt::Block(b) => return !b.stmts.is_empty(),
+            ZtsIfAlt::If(next) => link = next,
+        }
     }
 }
 
-/// `test ? consTail : (…)` — for statement-free chains.
+/// `test ? consTail : (…)` — for statement-free chains. Iterative: collect
+/// the links, then fold the ternary from the tail end.
 fn build_ternary(i: ZtsIfExpr) -> Expr {
-    let alt = match i.alt {
-        ZtsIfAlt::Block(b) => b.tail,
-        ZtsIfAlt::If(next) => Box::new(build_ternary(*next)),
+    let mut links: Vec<(Span, Box<Expr>, Box<Expr>)> = Vec::new();
+    let mut link = i;
+    let final_alt = loop {
+        links.push((link.span, link.test, link.cons.tail));
+        match link.alt {
+            ZtsIfAlt::Block(b) => break b.tail,
+            ZtsIfAlt::If(next) => link = *next,
+        }
     };
-    Expr::Cond(CondExpr {
-        span: i.span,
-        test: i.test,
-        cons: i.cons.tail,
-        alt,
-    })
+
+    let mut alt = final_alt;
+    for (span, test, cons) in links.into_iter().rev() {
+        alt = Box::new(Expr::Cond(CondExpr {
+            span,
+            test,
+            cons,
+            alt,
+        }));
+    }
+    *alt
 }
 
 /// `{ …stmts; return tail; }`

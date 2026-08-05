@@ -1,0 +1,41 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/enum_forward_reference.zts
+---
+function __ztsAbsurd(x: never): never {
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
+}
+type Shape = {
+    kind: "Circle";
+    radius: number;
+} | {
+    kind: "Square";
+    side: number;
+};
+const Shape = {
+    Circle: (radius: number): Shape =>({
+            kind: "Circle",
+            radius
+        }),
+    Square: (side: number): Shape =>({
+            kind: "Square",
+            side
+        })
+};
+// Enum expansions hoist: use-before-declaration works, like TS enum / Rust.
+export const first: Shape = Shape.Circle(1);
+export const second = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Circle") {
+        const { radius } = __m;
+        return radius;
+    }
+    if (__k === "Square") {
+        const { side } = __m;
+        return side;
+    }
+    return __ztsAbsurd(__k);
+})(first);

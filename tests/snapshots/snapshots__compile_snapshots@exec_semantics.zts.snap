@@ -1,0 +1,64 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/exec_semantics.zts
+---
+function __ztsAbsurd(x: never): never {
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
+}
+type Shape = {
+    kind: "Circle";
+    radius: number;
+} | {
+    kind: "Square";
+    side: number;
+};
+const Shape = {
+    Circle: (radius: number): Shape =>({
+            kind: "Circle",
+            radius
+        }),
+    Square: (side: number): Shape =>({
+            kind: "Square",
+            side
+        })
+};
+// Executed by tests/tsc_exit.rs under node: every zts construct here must
+// produce the RIGHT VALUE at runtime, not merely typecheck. Guards against
+// precedence miscompiles that tsc cannot see.
+function expect(name: string, got: unknown, want: unknown): void {
+    if (got !== want) {
+        throw new globalThis.Error(`${name}: got ${String(got)}, want ${String(want)}`);
+    }
+}
+const c = true as boolean;
+expect("plus", (c ? 1 : 2) + 1, 2);
+expect("neg", -(c ? 1 : 2), -1);
+expect("index", (c ? [
+    7
+] : [
+    9
+])[0], 7);
+expect("pow", (c ? 2 : 3) ** 2, 4);
+expect("not", !(c ? true : false), false);
+expect("mul", (c ? 1 : 2) * (c ? 3 : 4), 3);
+const sq = Shape.Square(3);
+const area = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Circle") {
+        const { radius } = __m;
+        const r2 = radius * radius;
+        return 3 * r2;
+    }
+    if (__k === "Square") {
+        const { side } = __m;
+        return side ** 2;
+    }
+    return __ztsAbsurd(__k);
+})(sq);
+expect("match", area, 9);
+const graded = area > 100 ? "big" : area > 5 ? "mid" : "small";
+expect("chain", graded, "mid");
+console.log("exec_semantics: all assertions passed");

@@ -200,6 +200,42 @@ fn lower_enum(e: &ZtsEnumDecl) -> (Decl, Decl) {
     (type_alias, factories)
 }
 
+/// First index past the directive prologue (and, for modules, past leading
+/// imports): the hoist target. Enum expansions are pure declarations
+/// (a type alias + an object literal of arrows), so evaluation order is
+/// unaffected — and hoisting restores the order-independence both TS
+/// `enum` (hoisted var) and Rust enums have. Without it, a use-before-decl
+/// resolves the (hoisted) TYPE but not the factory const: a confusing
+/// TS2448 on the generated file.
+fn module_hoist_index(items: &[ModuleItem]) -> usize {
+    let mut idx = 0;
+    for item in items {
+        match item {
+            ModuleItem::Stmt(Stmt::Expr(ExprStmt { expr, .. }))
+                if matches!(&**expr, Expr::Lit(Lit::Str(..))) =>
+            {
+                idx += 1;
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::Import(..)) => idx += 1,
+            _ => break,
+        }
+    }
+    idx
+}
+
+fn stmts_hoist_index(stmts: &[Stmt]) -> usize {
+    let mut idx = 0;
+    for stmt in stmts {
+        match stmt {
+            Stmt::Expr(ExprStmt { expr, .. }) if matches!(&**expr, Expr::Lit(Lit::Str(..))) => {
+                idx += 1;
+            }
+            _ => break,
+        }
+    }
+    idx
+}
+
 impl VisitMut for LowerEnums {
     fn visit_mut_module_items(&mut self, items: &mut Vec<ModuleItem>) {
         items.visit_mut_children_with(self);
@@ -217,13 +253,14 @@ impl VisitMut for LowerEnums {
             return;
         }
 
-        let mut out: Vec<ModuleItem> = Vec::with_capacity(items.len() + 4);
+        let mut hoisted: Vec<ModuleItem> = Vec::new();
+        let mut out: Vec<ModuleItem> = Vec::with_capacity(items.len());
         for item in items.drain(..) {
             match item {
                 ModuleItem::Stmt(Stmt::Decl(Decl::ZtsEnum(e))) => {
                     let (ty, factories) = lower_enum(&e);
-                    out.push(ModuleItem::Stmt(Stmt::Decl(ty)));
-                    out.push(ModuleItem::Stmt(Stmt::Decl(factories)));
+                    hoisted.push(ModuleItem::Stmt(Stmt::Decl(ty)));
+                    hoisted.push(ModuleItem::Stmt(Stmt::Decl(factories)));
                 }
                 ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
                     span,
@@ -233,12 +270,14 @@ impl VisitMut for LowerEnums {
                     let export = |decl: Decl| {
                         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { span, decl }))
                     };
-                    out.push(export(ty));
-                    out.push(export(factories));
+                    hoisted.push(export(ty));
+                    hoisted.push(export(factories));
                 }
                 other => out.push(other),
             }
         }
+        let idx = module_hoist_index(&out);
+        out.splice(idx..idx, hoisted);
         *items = out;
     }
 
@@ -252,17 +291,88 @@ impl VisitMut for LowerEnums {
             return;
         }
 
-        let mut out: Vec<Stmt> = Vec::with_capacity(stmts.len() + 2);
+        let mut hoisted: Vec<Stmt> = Vec::new();
+        let mut out: Vec<Stmt> = Vec::with_capacity(stmts.len());
         for stmt in stmts.drain(..) {
             match stmt {
                 Stmt::Decl(Decl::ZtsEnum(e)) => {
                     let (ty, factories) = lower_enum(&e);
-                    out.push(Stmt::Decl(ty));
-                    out.push(Stmt::Decl(factories));
+                    hoisted.push(Stmt::Decl(ty));
+                    hoisted.push(Stmt::Decl(factories));
                 }
                 other => out.push(other),
             }
         }
+        let idx = stmts_hoist_index(&out);
+        out.splice(idx..idx, hoisted);
         *stmts = out;
+    }
+
+    // Defense in depth for single-statement positions (`if (c) enum E {}`
+    // style): the parser rejects these under zts, but `Decl::ZtsEnum` is
+    // public API — never let one reach codegen's `unreachable!`. These are
+    // the only Stmt slots that are not part of a `Vec<Stmt>`.
+
+    fn visit_mut_if_stmt(&mut self, s: &mut IfStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_enum(&mut s.cons);
+        if let Some(alt) = &mut s.alt {
+            wrap_single_stmt_enum(alt);
+        }
+    }
+
+    fn visit_mut_while_stmt(&mut self, s: &mut WhileStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_enum(&mut s.body);
+    }
+
+    fn visit_mut_do_while_stmt(&mut self, s: &mut DoWhileStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_enum(&mut s.body);
+    }
+
+    fn visit_mut_for_stmt(&mut self, s: &mut ForStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_enum(&mut s.body);
+    }
+
+    fn visit_mut_for_in_stmt(&mut self, s: &mut ForInStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_enum(&mut s.body);
+    }
+
+    fn visit_mut_for_of_stmt(&mut self, s: &mut ForOfStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_enum(&mut s.body);
+    }
+
+    fn visit_mut_labeled_stmt(&mut self, s: &mut LabeledStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_enum(&mut s.body);
+    }
+
+    fn visit_mut_with_stmt(&mut self, s: &mut WithStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_enum(&mut s.body);
+    }
+}
+
+/// If `stmt` is a bare zts enum declaration, expand it inside a block.
+fn wrap_single_stmt_enum(stmt: &mut Stmt) {
+    if matches!(stmt, Stmt::Decl(Decl::ZtsEnum(..))) {
+        let Stmt::Decl(Decl::ZtsEnum(e)) = std::mem::replace(
+            stmt,
+            Stmt::Empty(EmptyStmt {
+                span: swc_common::DUMMY_SP,
+            }),
+        ) else {
+            unreachable!()
+        };
+        let (ty, factories) = lower_enum(&e);
+        *stmt = Stmt::Block(BlockStmt {
+            span: e.span,
+            ctxt: SyntaxContext::empty(),
+            stmts: vec![Stmt::Decl(ty), Stmt::Decl(factories)],
+        });
     }
 }
