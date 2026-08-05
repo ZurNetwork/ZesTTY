@@ -68,3 +68,29 @@ test("diagnostics surface through this.error", async () => {
     /shorthand identifiers/,
   );
 });
+
+test("survives a non-throwing this.error host", async () => {
+  // Rollup's this.error throws, but not every plugin container does; the
+  // diagnostic must come back either way — never a TypeError on stage1.
+  const plugin = pluginInstance();
+  const seen = [];
+  const softCtx = {
+    error(msg) {
+      seen.push(String(msg));
+      return undefined;
+    },
+  };
+  const out = await plugin.transform.call(
+    softCtx,
+    "const r = match (t) { K { v: bad } => v };",
+    "/src/bad.zts",
+  );
+  assert.equal(out, undefined);
+  assert.match(seen[0], /shorthand identifiers/);
+});
+
+test("strips fragment suffixes from ids", async () => {
+  const plugin = pluginInstance();
+  const out = await plugin.transform.call(ctx, FIXTURE, "/src/shape.zts#frag");
+  assert.match(out.code, /__ztsAbsurd/);
+});

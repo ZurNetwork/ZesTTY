@@ -27,7 +27,8 @@ export default function zts(options = {}) {
     },
 
     async transform(code, id) {
-      const [file] = id.split("?", 1);
+      // Strip vite's query (`?import`, `?raw`) and any fragment.
+      const [file] = id.split(/[?#]/, 1);
       if (!ZTS_RE.test(file)) return null;
 
       let stage1;
@@ -38,8 +39,10 @@ export default function zts(options = {}) {
           inlineSourcesContent: !isProduction,
         });
       } catch (err) {
-        // Rendered zts diagnostics → vite error overlay.
-        this.error(`zts: ${err.message}`);
+        // Rendered zts diagnostics → vite error overlay. Rollup's
+        // this.error throws, but `return` guards hosts where it doesn't —
+        // falling through would bury the diagnostic under a TypeError.
+        return this.error(`zts: ${err.message}`);
       }
 
       const result = await transformWithEsbuild(
