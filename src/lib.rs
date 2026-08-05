@@ -1,4 +1,4 @@
-//! ztsc — the zts compiler driver.
+//! zestty — the ZesTTY (zts) compiler driver.
 //!
 //! Pipeline: extended parser (fork) → semantic pass → lowering pass →
 //! stock codegen → plain TS + sourcemap. TypeScript's own checker is the

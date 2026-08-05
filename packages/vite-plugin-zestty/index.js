@@ -1,4 +1,4 @@
-import { compile } from "@zts/native";
+import { compile } from "@zestty/native";
 import { transformWithEsbuild } from "vite";
 
 const ZTS_RE = /\.ztsx?$/;
@@ -6,7 +6,7 @@ const ZTS_RE = /\.ztsx?$/;
 /**
  * Vite plugin for `.zts` / `.ztsx` modules.
  *
- * Stage 1 (native ztsc): zts → TypeScript + sourcemap.
+ * Stage 1 (native zestty): zts → TypeScript + sourcemap.
  * Stage 2 (vite's own esbuild): TypeScript → JS, with the stage-1 map fed
  * in as `inMap` so the composed map points all the way back to the `.zts`
  * source — breakpoints set in `.zts` bind in devtools.
@@ -18,7 +18,7 @@ export default function zts(options = {}) {
   let isProduction = false;
 
   return {
-    name: "vite-plugin-zts",
+    name: "vite-plugin-zestty",
     // Run before vite's own transforms so esbuild never sees raw zts.
     enforce: "pre",
 

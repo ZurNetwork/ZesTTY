@@ -1,5 +1,5 @@
 // zts demo: all four locked features in one file.
-import { type Result, Ok, Err, map } from "@zts/core";
+import { type Result, Ok, Err, map } from "@zestty/core";
 
 enum Shape {
   Circle { radius: number },

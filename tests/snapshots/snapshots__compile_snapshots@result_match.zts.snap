@@ -3,7 +3,7 @@ source: tests/snapshots.rs
 expression: out.code
 input_file: tests/fixtures/result_match.zts
 ---
-import { type Result, Ok, Err, map } from "@zts/core";
+import { type Result, Ok, Err, map } from "@zestty/core";
 function __ztsAbsurd(x: never): never {
     const e: any = new globalThis.Error("zts: non-exhaustive match");
     e.ztsTag = x;

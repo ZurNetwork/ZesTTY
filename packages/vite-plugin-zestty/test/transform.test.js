@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SourceMapConsumer } from "source-map-js";
-import zts from "@zts/vite-plugin";
+import zts from "@zestty/vite-plugin";
 
 const FIXTURE = `type Shape =
   | { kind: "Circle"; radius: number }

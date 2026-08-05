@@ -1,5 +1,5 @@
 /**
- * @zts/core — the zts runtime library.
+ * @zestty/core — the ZesTTY (zts) runtime library.
  *
  * `Result<T, E>` is a plain tagged union using the same `kind` discriminant
  * as every other zts construct, so it composes with `match`:

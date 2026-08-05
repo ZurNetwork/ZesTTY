@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compile } from "@zts/native";
+import { compile } from "@zestty/native";
 
 const SHAPE = `
 type Shape =

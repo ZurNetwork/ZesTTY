@@ -7,7 +7,7 @@ const dir = dirname(fileURLToPath(import.meta.url));
 
 // Single prebuilt target for now. Widen this table when more platforms
 // get builds (see @napi-rs/cli for the full matrix approach).
-const CANDIDATES = ["ztsc.linux-x64-gnu.node"];
+const CANDIDATES = ["zestty.linux-x64-gnu.node"];
 
 function load() {
   const errors = [];
@@ -19,7 +19,7 @@ function load() {
     }
   }
   throw new Error(
-    `@zts/native: no loadable native module for ${process.platform}-${process.arch}.\n` +
+    `@zestty/native: no loadable native module for ${process.platform}-${process.arch}.\n` +
       `Run \`npm run build:native\` at the repo root.\n` +
       errors.join("\n"),
   );

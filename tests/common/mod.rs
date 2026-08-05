@@ -44,14 +44,14 @@ pub fn capturing_handler(cm: &Lrc<SourceMap>) -> (Handler, DiagBuf) {
     (handler, buf)
 }
 
-pub fn compile_fixture(path: &Path) -> Result<(ztsc::Output, String), (anyhow::Error, String)> {
+pub fn compile_fixture(path: &Path) -> Result<(zestty::Output, String), (anyhow::Error, String)> {
     // Keep diagnostics (and thus snapshots) machine-independent.
     let path = path
         .strip_prefix(env!("CARGO_MANIFEST_DIR"))
         .unwrap_or(path);
     let cm: Lrc<SourceMap> = Default::default();
     let (handler, buf) = capturing_handler(&cm);
-    match ztsc::compile_file(&cm, &handler, path) {
+    match zestty::compile_file(&cm, &handler, path) {
         Ok(out) => Ok((out, buf.contents())),
         Err(e) => Err((e, buf.contents())),
     }

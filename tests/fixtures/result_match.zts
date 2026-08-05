@@ -1,4 +1,4 @@
-import { type Result, Ok, Err, map } from "@zts/core";
+import { type Result, Ok, Err, map } from "@zestty/core";
 
 function divide(a: number, b: number): Result<number, string> {
   return if (b === 0) { Err("division by zero") } else { Ok(a / b) };

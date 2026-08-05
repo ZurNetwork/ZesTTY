@@ -1,4 +1,4 @@
-import { compile } from "@zts/native";
+import { compile } from "@zestty/native";
 
 /**
  * Svelte preprocessor for `<script lang="zts">`.
@@ -11,7 +11,7 @@ import { compile } from "@zts/native";
  * ```js
  * // svelte.config.js
  * import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
- * import ztsPreprocess from "@zts/svelte-preprocess";
+ * import ztsPreprocess from "@zestty/svelte-preprocess";
  * export default { preprocess: [ztsPreprocess(), vitePreprocess()] };
  * ```
  *
@@ -20,7 +20,7 @@ import { compile } from "@zts/native";
  */
 export default function ztsPreprocess(options = {}) {
   return {
-    name: "svelte-preprocess-zts",
+    name: "svelte-preprocess-zestty",
 
     script({ content, attributes, filename }) {
       if (attributes.lang !== "zts") return undefined;

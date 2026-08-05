@@ -306,7 +306,7 @@ fn generated_js_runs_with_correct_semantics() {
 
 #[test]
 fn result_from_core_composes_with_match() {
-    // The whole point: @zts/core's Result + expression-if + match, one
+    // The whole point: @zestty/core's Result + expression-if + match, one
     // file, verified by tsc end-to-end (feature #2's exit test).
     let (ts_path, _) = compile_to("result_match.zts", "exit_result.ts");
     let (ok, text) = tsc_with(

@@ -1,4 +1,4 @@
-//! Node binding for the zts compiler.
+//! Node binding for the ZesTTY (zts) compiler.
 //!
 //! Each compile runs on a dedicated thread with a 64 MiB stack: Node
 //! worker stacks are small, `swc` parsing/lowering is recursive, and a
@@ -36,8 +36,8 @@ pub fn compile(
     options: Option<CompileOptions>,
 ) -> napi::Result<CompileResult> {
     let options = options.unwrap_or_default();
-    let defaults = ztsc::Options::default();
-    let opts = ztsc::Options {
+    let defaults = zestty::Options::default();
+    let opts = zestty::Options {
         tsx: options.tsx.unwrap_or(defaults.tsx),
         decorators: options.decorators.unwrap_or(defaults.decorators),
         inline_sources_content: options
@@ -46,10 +46,10 @@ pub fn compile(
     };
 
     let handle = std::thread::Builder::new()
-        .name("ztsc-compile".into())
+        .name("zestty-compile".into())
         .stack_size(COMPILE_STACK_SIZE)
-        .spawn(move || ztsc::compile_source(&filename, source, opts))
-        .map_err(|e| napi::Error::from_reason(format!("ztsc: failed to spawn: {e}")))?;
+        .spawn(move || zestty::compile_source(&filename, source, opts))
+        .map_err(|e| napi::Error::from_reason(format!("zestty: failed to spawn: {e}")))?;
 
     match handle.join() {
         Ok(Ok(out)) => Ok(CompileResult {
@@ -58,7 +58,7 @@ pub fn compile(
         }),
         Ok(Err(failure)) => Err(napi::Error::from_reason(failure.diagnostics)),
         Err(_) => Err(napi::Error::from_reason(
-            "ztsc: compiler panicked; this is a bug in zts, please report it",
+            "zestty: compiler panicked; this is a bug in zts, please report it",
         )),
     }
 }

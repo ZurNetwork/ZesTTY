@@ -1,5 +1,5 @@
 {
-  "name": "@zts/core",
+  "name": "@zestty/core",
   "version": "0.1.0",
   "description": "zts runtime core: Result<T, E> with Ok/Err constructors and map/map_err combinators, using the zts `kind` discriminant convention.",
   "type": "module",

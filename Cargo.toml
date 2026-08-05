@@ -1,17 +1,17 @@
 [workspace]
-members = [".", "crates/ztsc-napi"]
+members = [".", "crates/zestty-napi"]
 
 [package]
-name = "ztsc"
+name = "zestty"
 version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "ztsc"
+name = "zestty"
 path = "src/lib.rs"
 
 [[bin]]
-name = "ztsc"
+name = "zestty"
 path = "src/main.rs"
 
 [dependencies]

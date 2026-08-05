@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-zts: a Rust-flavored superset of TypeScript that compiles to plain TypeScript (`zts → TS → JS`). Custom constructs (`match`, enums-with-data, expression `if`, `Result`) are parsed by a forked swc parser, then lowered to idiomatic TS; `tsc` verifies the output. We never reimplement TypeScript's type system — we shape generated TS so tsc enforces our guarantees (e.g. exhaustiveness via `__ztsAbsurd(x: never): never` fed the `__k = __m.kind` alias).
+ZesTTY (language: zts) — a Rust-flavored superset of TypeScript that compiles to plain TypeScript (`zts → TS → JS`). Custom constructs (`match`, enums-with-data, expression `if`, `Result`) are parsed by a forked swc parser, then lowered to idiomatic TS; `tsc` verifies the output. We never reimplement TypeScript's type system — we shape generated TS so tsc enforces our guarantees (e.g. exhaustiveness via `__ztsAbsurd(x: never): never` fed the `__k = __m.kind` alias).
 
 The point is compiler-level **safety**, not Rust cosplay: features exist to turn bug classes (unhandled variants, unchecked errors) into compile errors while keeping Rust-style patterns ergonomic.
 
@@ -13,17 +13,17 @@ Read README.md before doing anything — it is the authoritative spec: locked fe
 ## Commands
 
 - `cargo test` — the main gate: insta snapshot tests (`.zts` in → TS out, `tests/fixtures/**`) + tsc exit tests (`tests/tsc_exit.rs`, needs `npm install` once for the local tsc). Snapshot review: `INSTA_UPDATE=always cargo test` then inspect, or `cargo insta review`.
-- `cargo run --bin ztsc -- file.zts [-o out.ts] [--no-map]` — the CLI; writes `file.ts` + `file.ts.map`.
-- `npm test` — all packages/* node:test suites (native binding, Vite plugin, Svelte preprocessor, @zts/core).
-- `npm run build:native` — rebuild the napi binding after Rust changes (copies the .node into packages/ztsc-native).
+- `cargo run --bin zestty -- file.zts [-o out.ts] [--no-map]` — the CLI; writes `file.ts` + `file.ts.map`.
+- `npm test` — all packages/* node:test suites (native binding, Vite plugin, Svelte preprocessor, @zestty/core).
+- `npm run build:native` — rebuild the napi binding after Rust changes (copies the .node into packages/zestty-native).
 - Fork tests: `cd ../swc_rustify && cargo test -p swc_ecma_parser --features typescript --lib zts::` (all zts parser tests live in `src/parser/zts.rs`).
 - Fork visit regeneration after ANY AST node change: `cd ../swc_rustify && cargo test -p generate-code test_ecmascript` (never hand-edit `generated.rs`).
 
 ## Layout
 
 - `src/` — compiler driver: `lib.rs` (pipeline: parse → semantic → lower_enums → resolver → lower → hygiene → codegen), `semantic.rs`, `lower_enums.rs` (pre-resolver), `lower.rs` (post-resolver: match + if-expr), `main.rs` (CLI).
-- `crates/ztsc-napi` — Node binding; every compile runs on a 64MiB-stack thread.
-- `packages/` — npm workspace: `ztsc-native`, `vite-plugin-zts`, `svelte-preprocess-zts`, `core` (@zts/core Result).
+- `crates/zestty-napi` — Node binding; every compile runs on a 64MiB-stack thread.
+- `packages/` — npm workspace: `zestty-native`, `vite-plugin-zestty`, `svelte-preprocess-zestty`, `core` (@zestty/core Result).
 - `../swc_rustify` (fork of swc, branch `zts`, `main` tracks upstream) — extended AST/parser. All zts parser code in `crates/swc_ecma_parser/src/parser/zts.rs`; AST nodes in `swc_ecma_ast` (`expr.rs`, `decl.rs`).
 
 ## Locked rules (from README — non-negotiable)

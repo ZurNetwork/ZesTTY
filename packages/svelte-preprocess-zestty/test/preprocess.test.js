@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { preprocess } from "svelte/compiler";
-import ztsPreprocess from "@zts/svelte-preprocess";
+import ztsPreprocess from "@zestty/svelte-preprocess";
 
 const COMPONENT = `<script lang="zts">
   type State =

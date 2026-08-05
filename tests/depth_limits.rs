@@ -2,7 +2,7 @@
 //! overflows: uncatchable SIGABRTs are unacceptable once the compiler runs
 //! in-process (napi/Vite).
 
-use ztsc::{Options, compile_source};
+use zestty::{Options, compile_source};
 
 /// Run on a 64 MiB-stack thread — the same configuration the napi binding
 /// uses in production. (Bare #[test] threads get 2 MiB, far below what a

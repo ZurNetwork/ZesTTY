@@ -1,6 +1,6 @@
-//! ztsc — compile `.zts` files to plain TypeScript.
+//! zestty — compile `.zts` files to plain TypeScript.
 //!
-//! Usage: `ztsc <input.zts> [-o <output.ts>] [--no-map]`
+//! Usage: `zestty <input.zts> [-o <output.ts>] [--no-map]`
 //!
 //! Writes `<input>.ts` and `<input>.ts.map` next to the input unless `-o`
 //! is given.
@@ -35,7 +35,7 @@ fn parse_args() -> Result<Args, String> {
             }
             Some("--no-map") => emit_map = false,
             Some("-h") | Some("--help") => {
-                return Err("usage: ztsc <input.zts> [-o <output.ts>] [--no-map]".to_string());
+                return Err("usage: zestty <input.zts> [-o <output.ts>] [--no-map]".to_string());
             }
             _ if input.is_none() => input = Some(PathBuf::from(arg)),
             _ => return Err(format!("unexpected argument: {}", arg.to_string_lossy())),
@@ -44,7 +44,7 @@ fn parse_args() -> Result<Args, String> {
 
     Ok(Args {
         input: input
-            .ok_or_else(|| "usage: ztsc <input.zts> [-o <output.ts>] [--no-map]".to_string())?,
+            .ok_or_else(|| "usage: zestty <input.zts> [-o <output.ts>] [--no-map]".to_string())?,
         output,
         emit_map,
     })
@@ -72,7 +72,7 @@ fn main() -> ExitCode {
     let cm: Lrc<SourceMap> = Default::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Auto, true, false, Some(cm.clone()));
 
-    let output = match ztsc::compile_file(&cm, &handler, &args.input) {
+    let output = match zestty::compile_file(&cm, &handler, &args.input) {
         Ok(o) => o,
         Err(err) => {
             eprintln!("error: {err}");

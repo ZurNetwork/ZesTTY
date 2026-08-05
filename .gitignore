@@ -1,3 +1,3 @@
 /target
 node_modules/
-packages/ztsc-native/*.node
+packages/zestty-native/*.node

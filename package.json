@@ -1,5 +1,5 @@
 {
-  "name": "zts-monorepo",
+  "name": "zestty-monorepo",
   "private": true,
   "version": "0.1.0",
   "description": "zts: a Rust-flavored superset of TypeScript. Compiler-level safety, ergonomic Rust patterns.",
@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build:native": "cargo build -p ztsc-napi --release && cp target/release/libztsc_napi.so packages/ztsc-native/ztsc.linux-x64-gnu.node",
+    "build:native": "cargo build -p zestty-napi --release && cp target/release/libzestty_napi.so packages/zestty-native/zestty.linux-x64-gnu.node",
     "test": "npm run test --workspaces --if-present"
   },
   "devDependencies": {

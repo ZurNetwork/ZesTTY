@@ -1,4 +1,4 @@
-# zts
+# ZesTTY
 
 A Rust-flavored **superset of TypeScript** that compiles to plain TypeScript.
 
@@ -57,7 +57,7 @@ Two sibling repos:
 - ✅ Fork cloned (`../swc_rustify`), `zts` branch carrying the extensions,
   `main` clean tracking upstream.
 - ✅ Phase 1: `match` vertical slice complete (see checklist below). Crate
-  renamed to `ztsc`; `cargo test` runs snapshot + tsc exit tests
+  renamed to `zestty`; `cargo test` runs snapshot + tsc exit tests
   (needs `npm install` for the local tsc).
 - ✅ Phase 1 review gate: adversarial code review + security review (two
   independent reviewers, two verification rounds each). Highlights baked in:
@@ -65,11 +65,11 @@ Two sibling repos:
   parser recursion + semantic depth limit 2048 + leak-don't-drop for
   over-deep ASTs, directive-prologue-safe helper injection, IIFE lowering
   for narrowing, globalThis.Error keystone throw with `ztsTag`.
-- ✅ Phase 2: toolchain. npm workspace under `packages/` (`@zts/native`,
-  `@zts/vite-plugin`, `@zts/svelte-preprocess`), all with node:test suites;
+- ✅ Phase 2: toolchain. npm workspace under `packages/` (`@zestty/native`,
+  `@zestty/vite-plugin`, `@zestty/svelte-preprocess`), all with node:test suites;
   `npm test` runs them, `npm run build:native` rebuilds the binding.
 - ✅ Phase 4: all four locked features (match, enums-with-data,
-  expression if, `@zts/core` Result). See the checklist below.
+  expression if, `@zestty/core` Result). See the checklist below.
 - ⬜ Phase 3 (DX: TextMate grammar, LSP proxy) — the remaining roadmap item.
 
 ---
@@ -91,34 +91,40 @@ const area = match (shape) {
 Lowers to:
 
 ```ts
-// generated TS (helpers injected once per module)
-function __ztsAbsurd(x: never): never { throw { name: "ZtsNonExhaustiveMatch", ... }; }
-function __ztsMatch<T, R>(v: T, f: (v: T) => R): R { return f(v); }
+// generated TS (helper injected once per module, after directives+imports)
+function __ztsAbsurd(x: never): never {
+  const e: any = new globalThis.Error("zts: non-exhaustive match");
+  e.ztsTag = x;
+  throw e;
+}
 
-const area = __ztsMatch(shape, (__m) => {
+const area = ((__m) => {
   const __k = __m.kind;
   if (__k === "Circle") { const { radius } = __m; return PI * radius ** 2; }
   if (__k === "Square") { const { side } = __m; return side ** 2; }
   return __ztsAbsurd(__k);
-});
+})(shape);
 ```
 
 `__ztsAbsurd(x: never): never` is the keystone: if an arm is missing, `__k`
-does not narrow to `never` and **tsc rejects the generated code**. TypeScript's
-own checker proves exhaustiveness — zts just aims it. The reported error span
-must map back to the original `match` in the `.zts` file.
+does not narrow to `never` and **tsc rejects the generated code**, naming the
+missing variant. TypeScript's own checker proves exhaustiveness — zts just
+aims it. The reported error span must map back to the original `match` in the
+`.zts` file.
 
-Three load-bearing details, learned the hard way (review-gated):
-- The generic `__ztsMatch` helper (not a bare IIFE) is what types `__m`:
-  an IIFE parameter is implicitly `any`, and evaluating the discriminant as
-  an argument keeps `await`/`yield`/`this` in it working.
+Load-bearing details, learned the hard way (review-gated, two rounds):
+- It must be an **IIFE**, not a named helper call: TS contextually types
+  IIFE parameters from call arguments AND preserves outer `let` narrowing
+  only through IIFEs. The discriminant is the *argument*, so `await`/
+  `yield`/`this` inside it keep working.
 - Testing the alias `__k` still narrows `__m` (TS 4.4 aliased discriminant
-  narrowing), and passing `__k` to the keystone works for both union and
-  single-variant types — `__m` itself would be `never` (TS2339) in one case
-  and never-narrowing in the other.
-- `__ztsAbsurd` throws a plain object, never `new Error(...)`: a global
-  `Error` reference would make hygiene rename user classes shadowing it,
-  silently changing what type annotations mean.
+  narrowing), and passing `__k` — not `__m` — to the keystone works for both
+  union and single-variant types.
+- The helper throws via `globalThis.Error` (real Error: stack, instanceof)
+  with the unmatched tag on `ztsTag` — never a bare `Error` reference
+  (hygiene is not TS-type-aware; bare global refs rename user shadows and
+  silently change type meaning), and never a `kind` field (the thrown object
+  must not impersonate a domain tagged union).
 
 Parser note: `match` is a **contextual keyword**. `str.match(re)` must keep
 working. On `match (expr) {`, checkpoint (`ParserCheckpoint`), attempt a
@@ -127,7 +133,7 @@ match-expression parse, backtrack to a call expression on failure.
 ### 2. `Result<T, E>` with `map` / `map_err`
 
 A **library feature**, not syntax. Ships as a tiny runtime package
-(`@zts/core`):
+(`@zestty/core`):
 
 ```ts
 type Result<T, E> =
@@ -236,7 +242,7 @@ These are on the horizon but
 - [x] Parser: contextual `match`, checkpoint/backtrack, `str.match(re)` survives (fork)
 - [x] Lowering pass: match → IIFE + if-chain + `__ztsAbsurd` (zts, plus resolver+hygiene for `__zts` name collisions)
 - [x] Emit via stock codegen, original spans preserved (zts)
-- [x] CLI: `ztsc file.zts` → `file.ts` (+ `.ts.map`) (zts)
+- [x] CLI: `zestty file.zts` → `file.ts` (+ `.ts.map`) (zts)
 - [x] **Exit test:** `tests/tsc_exit.rs` — deleting an arm makes tsc emit TS2345 on the generated TS, and the error position maps through the sourcemap back to the original `match`
 
 Phase 1 scope notes (locked by Zuri): arms are strictly `Variant { bindings } => expr` —
@@ -244,13 +250,13 @@ no wildcards, no bare variants, no guards, no literals. `await`/`yield` directly
 arm body is a compile error until arms can lower to async IIFEs.
 
 ### Phase 2 — Toolchain ✅ (npm side under `packages/`)
-- [x] napi-rs binding (`crates/ztsc-napi` → `@zts/native`; each compile on a
+- [x] napi-rs binding (`crates/zestty-napi` → `@zestty/native`; each compile on a
   64 MiB-stack thread so deep input can't SIGABRT the host; linux-x64 build
   via `npm run build:native`)
-- [x] Vite plugin (`@zts/vite-plugin`: `transform` filters `.zts`/`.ztsx`,
+- [x] Vite plugin (`@zestty/vite-plugin`: `transform` filters `.zts`/`.ztsx`,
   native zts→TS, then vite's `transformWithEsbuild` TS→JS with `inMap` so
   the composed map reaches back to the `.zts`)
-- [x] Svelte preprocessor (`@zts/svelte-preprocess`: `<script lang="zts">`
+- [x] Svelte preprocessor (`@zestty/svelte-preprocess`: `<script lang="zts">`
   → compiled TS + `lang="ts"` attribute rewrite, chain before
   `vitePreprocess`)
 - [x] Sourcemap proof — headless form: plugin test asserts a position in
@@ -273,7 +279,7 @@ arm body is a compile error until arms can lower to async IIFEs.
   IIFE (await/yield rejected with a diagnostic). Match arm bodies accept
   the block form too (`=> {` is a block, like arrow bodies — object
   literals need parens).
-- [x] `@zts/core` with `Result`, `map`, `map_err` (feature #2): plus
+- [x] `@zestty/core` with `Result`, `map`, `map_err` (feature #2): plus
   `is_ok`/`is_err` guards and `unwrap`/`unwrap_or`, all on the `kind`
   convention. Exit test proves Result + expression-if + match compose and
   the keystone still fires when the `Err` arm is deleted.
@@ -287,7 +293,7 @@ Language projects die with five features parsed and zero usable in an editor.
 `MAX_EXPR_DEPTH = 2048` assumes ≥8 MiB of stack for the compiler's recursive
 passes in debug builds. Shipping shapes are covered (napi binding: 64 MiB
 thread; CLI: default main-thread stack), but a small-stack host embedding
-`ztsc` as a library and feeding it a *legitimate* ~2000-deep expression could
+`zestty` as a library and feeding it a *legitimate* ~2000-deep expression could
 still abort. Options if this ever matters: lower the constant, or run
 `compile()` on a sized thread like the napi binding does. Pre-existing since
 Phase 1 (twice-gated there); flagged again by the Phase 4 verification round.
