@@ -44,6 +44,11 @@ expect("index", (c ? [
 expect("pow", (c ? 2 : 3) ** 2, 4);
 expect("not", !(c ? true : false), false);
 expect("mul", (c ? 1 : 2) * (c ? 3 : 4), 3);
+expect("typeof", typeof (c ? 1 : 2), "number");
+let seqSide = 0;
+const seqVal = c ? (seqSide = 5, 10) : 0;
+expect("seq value", seqVal, 10);
+expect("seq side effect", seqSide, 5);
 const sq = Shape.Square(3);
 const area = ((__m)=>{
     const __k = __m.kind;

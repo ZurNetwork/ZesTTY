@@ -16,6 +16,12 @@ expect("index", if (c) { [7] } else { [9] }[0], 7);
 expect("pow", if (c) { 2 } else { 3 } ** 2, 4);
 expect("not", !if (c) { true } else { false }, false);
 expect("mul", if (c) { 1 } else { 2 } * if (c) { 3 } else { 4 }, 3);
+expect("typeof", typeof if (c) { 1 } else { 2 }, "number");
+
+let seqSide = 0;
+const seqVal = if (c) { (seqSide = 5), 10 } else { 0 };
+expect("seq value", seqVal, 10);
+expect("seq side effect", seqSide, 5);
 
 enum Shape {
   Circle { radius: number },

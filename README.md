@@ -266,6 +266,16 @@ arm body is a compile error until arms can lower to async IIFEs.
 **Discipline rule: nothing from Phase 4 ships before Phase 2 is green.**
 Language projects die with five features parsed and zero usable in an editor.
 
+### Known limitation (open decision for the Engineer)
+
+`MAX_EXPR_DEPTH = 2048` assumes ≥8 MiB of stack for the compiler's recursive
+passes in debug builds. Shipping shapes are covered (napi binding: 64 MiB
+thread; CLI: default main-thread stack), but a small-stack host embedding
+`ztsc` as a library and feeding it a *legitimate* ~2000-deep expression could
+still abort. Options if this ever matters: lower the constant, or run
+`compile()` on a sized thread like the napi binding does. Pre-existing since
+Phase 1 (twice-gated there); flagged again by the Phase 4 verification round.
+
 ---
 
 ## For Claude Code
