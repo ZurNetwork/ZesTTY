@@ -40,6 +40,37 @@ test("tsx option gates JSX", () => {
   assert.throws(() => compile(src, "el.zts"));
 });
 
+// One fixture per language feature, compiled through the .node binding.
+// Guards against the binding silently lagging the compiler (issue #2): a
+// stale prebuilt binding predating a feature fails HERE, not as a confusing
+// parse error inside a consumer's svelte-check.
+
+test("feature: enums-with-data compile through the binding", () => {
+  const { code } = compile(
+    "enum Shape { Circle { radius: number }, Square { side: number } }\nvoid Shape;\n",
+    "feature_enum.zts",
+  );
+  assert.match(code, /type Shape =/);
+  assert.match(code, /Circle: \(radius: number\)/);
+  assert.doesNotMatch(code, /enum /);
+});
+
+test("feature: expression if compiles through the binding", () => {
+  const { code } = compile(
+    "declare const b: boolean;\nconst a = if (b) { 1 } else { 2 };\nvoid a;\n",
+    "feature_if.zts",
+  );
+  assert.match(code, /b \? 1 : 2/);
+});
+
+test("feature: match arm block bodies compile through the binding", () => {
+  const { code } = compile(
+    'declare const t: { kind: "K"; v: number };\nconst r = match (t) { K { v } => { const d = v * 2; d } };\nvoid r;\n',
+    "feature_arm_block.zts",
+  );
+  assert.match(code, /const d = v \* 2;/);
+});
+
 test("deep nesting is a diagnostic, not a crash", () => {
   const n = 5000;
   const src = `const a = ${"(".repeat(n)}1${")".repeat(n)};`;
