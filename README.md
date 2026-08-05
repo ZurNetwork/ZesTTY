@@ -270,10 +270,29 @@ arm body is a compile error until arms can lower to async IIFEs.
       match arm. (Manual browser-devtools breakpoint check still worth one
       eyeball pass in a real app.)
 
+### Consumer notes (learned from the first real integration)
+
+- **Declare the Svelte preprocessor in `svelte.config.js`**, not via inline
+  `sveltekit({...})` options in `vite.config.ts` — SvelteKit ignores
+  `svelte.config.js` entirely when options are passed inline.
+- **svelte-check cannot type-check `lang="zts"` blocks** (v4.6): it runs
+  the preprocess chain but checks the ORIGINAL source and keys the language
+  off the original `lang` attribute. `.zts` modules are likewise invisible
+  to a consumer's `tsc --noEmit`. Builds catch zts syntax errors; nothing
+  in a consumer's CI catches type errors — the exhaustiveness keystone
+  never fires there. Until `zts-check` exists (see Phase 3), the honest
+  guidance is: author `.zts`, commit the generated `.ts` twins for checking,
+  and keep Svelte script blocks `lang="ts"`.
+
 ### Phase 3 — DX
 
 - [ ] TextMate grammar for syntax highlighting
 - [ ] LSP proxy: run tsserver over generated TS, map diagnostics back through sourcemaps (Civet's approach)
+- [ ] `zts-check` (issue #3): the CI twin of the LSP proxy — compile all
+      `.zts` sources + `lang="zts"` blocks into a shadow tree, run
+      tsc/svelte-check there, remap diagnostics through the sourcemaps back
+      to the `.zts` origins. The sourcemap discipline was built for exactly
+      this.
 
 ### Phase 4 — Next features (each repeats the Phase 1 loop)
 
