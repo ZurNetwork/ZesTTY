@@ -17,7 +17,7 @@ const COMPONENT = `<script lang="zts">
 <p>{label}</p>
 `;
 
-test("compiles <script lang=\"zts\"> and rewrites lang to ts", async () => {
+test('compiles <script lang="zts"> and rewrites lang to ts', async () => {
   const result = await preprocess(COMPONENT, [ztsPreprocess()], {
     filename: "Widget.svelte",
   });
@@ -27,14 +27,18 @@ test("compiles <script lang=\"zts\"> and rewrites lang to ts", async () => {
   assert.match(result.code, /<p>\{label\}<\/p>/);
 });
 
-test("leaves lang=\"ts\" scripts alone", async () => {
+test('leaves lang="ts" scripts alone', async () => {
   const src = `<script lang="ts">const n: number = 1;</script><p>{n}</p>`;
-  const result = await preprocess(src, [ztsPreprocess()], { filename: "T.svelte" });
+  const result = await preprocess(src, [ztsPreprocess()], {
+    filename: "T.svelte",
+  });
   assert.equal(result.code, src);
 });
 
 test("leaves untyped scripts alone", async () => {
   const src = `<script>const n = 1;</script><p>{n}</p>`;
-  const result = await preprocess(src, [ztsPreprocess()], { filename: "U.svelte" });
+  const result = await preprocess(src, [ztsPreprocess()], {
+    filename: "U.svelte",
+  });
   assert.equal(result.code, src);
 });

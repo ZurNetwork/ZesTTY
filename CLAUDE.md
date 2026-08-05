@@ -39,6 +39,19 @@ Read README.md before doing anything — it is the authoritative spec: locked fe
 - ASI guards are load-bearing: `match(...)` + newline + `{` stays a call+block; the `{` of a match must share a line with `)`.
 - Every feature lands with: fork parser tests, snapshot fixtures (happy + error), and a tsc exit test proving the safety property fires.
 
+## Branch Strategy
+
+- `main` — stable; the only long-lived branch. All PRs target it. **Never push directly to `main`** (a GitHub ruleset enforces this).
+- `feature/*` — a unit of new work, branched from `main` (e.g. `feature/<ticket>-short-slug`).
+- `bug/*` — a bug fix, branched from `main`.
+- `chore/*`, `docs/*`, `hotfix/*` — maintenance, documentation, and urgent fixes.
+
+## Commits
+
+- PRs merge via **Squash and merge** only (other methods are disabled), so `main` keeps **one commit per PR**; the branch itself may carry several granular commits. Merged branches auto-delete.
+- Required CI checks (`format` · `lint` · `test`) must pass before merge. CI clones the swc fork (`ProgrammingCheetah/swc_rustify@zts`) as a sibling directory — the Cargo path-deps require it.
+- Local `/understand` + `/remember` briefings live in `.understand/` (tracked).
+
 ## Review-gate discipline
 
 Milestones get adversarial code review + security review (designer agents), findings fixed, then a verification round by the same reviewers. Phase 1 took two full rounds — the regression list in README's match section is what they caught. Keep that bar.

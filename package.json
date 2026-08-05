@@ -9,9 +9,12 @@
   ],
   "scripts": {
     "build:native": "cargo build -p zestty-napi --release && cp target/release/libzestty_napi.so packages/zestty-native/zestty.linux-x64-gnu.node",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "prettier": "^3.6.0"
   }
 }

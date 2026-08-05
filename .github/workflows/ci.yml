@@ -1,0 +1,91 @@
+name: CI
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ZesTTY path-depends on the swc fork as a SIBLING directory
+# (../swc_rustify), so every job checks out two repos side by side and
+# runs from the ZesTTY subdirectory.
+
+jobs:
+  format:
+    name: format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ZesTTY
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ZesTTY
+      - uses: actions/checkout@v4
+        with:
+          repository: ProgrammingCheetah/swc_rustify
+          ref: zts
+          path: swc_rustify
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: cargo fmt --all --check
+      - run: npm ci
+      - run: npm run format:check
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ZesTTY
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ZesTTY
+      - uses: actions/checkout@v4
+        with:
+          repository: ProgrammingCheetah/swc_rustify
+          ref: zts
+          path: swc_rustify
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ZesTTY
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ZesTTY
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ZesTTY
+      - uses: actions/checkout@v4
+        with:
+          repository: ProgrammingCheetah/swc_rustify
+          ref: zts
+          path: swc_rustify
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ZesTTY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm run build:native
+      - run: cargo test --workspace
+      - run: npm test

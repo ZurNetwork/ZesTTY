@@ -38,14 +38,20 @@ export function Err<E>(error: E): Err<E> {
  * map(Err("boom"), (n) => n) // Err("boom")
  * ```
  */
-export function map<T, U, E>(r: Result<T, E>, f: (value: T) => U): Result<U, E> {
+export function map<T, U, E>(
+  r: Result<T, E>,
+  f: (value: T) => U,
+): Result<U, E> {
   return r.kind === "Ok" ? Ok(f(r.value)) : r;
 }
 
 /**
  * Transform the error value, passing successes through untouched.
  */
-export function map_err<T, E, F>(r: Result<T, E>, f: (error: E) => F): Result<T, F> {
+export function map_err<T, E, F>(
+  r: Result<T, E>,
+  f: (error: E) => F,
+): Result<T, F> {
   return r.kind === "Err" ? Err(f(r.error)) : r;
 }
 

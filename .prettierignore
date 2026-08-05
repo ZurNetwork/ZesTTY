@@ -1,0 +1,9 @@
+node_modules/
+target/
+dist/
+package-lock.json
+tests/snapshots/
+tests/fixtures/
+*.node
+.understand/
+Cargo.lock

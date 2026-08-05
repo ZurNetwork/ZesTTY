@@ -41,7 +41,10 @@ test("transforms .zts to plain JS with a composed sourcemap", async () => {
   const genCol = lines[genLine - 1].indexOf("3.14");
   const consumer = new SourceMapConsumer(out.map);
   const orig = consumer.originalPositionFor({ line: genLine, column: genCol });
-  assert.ok(orig.source && orig.source.includes("shape.zts"), `source: ${orig.source}`);
+  assert.ok(
+    orig.source && orig.source.includes("shape.zts"),
+    `source: ${orig.source}`,
+  );
   const srcLines = FIXTURE.split("\n");
   assert.match(
     srcLines[orig.line - 1],
@@ -52,19 +55,30 @@ test("transforms .zts to plain JS with a composed sourcemap", async () => {
 
 test("ignores non-zts modules", async () => {
   const plugin = pluginInstance();
-  assert.equal(await plugin.transform.call(ctx, "const a = 1;", "/src/a.ts"), null);
+  assert.equal(
+    await plugin.transform.call(ctx, "const a = 1;", "/src/a.ts"),
+    null,
+  );
 });
 
 test("handles vite query-suffixed ids", async () => {
   const plugin = pluginInstance();
-  const out = await plugin.transform.call(ctx, FIXTURE, "/src/shape.zts?import");
+  const out = await plugin.transform.call(
+    ctx,
+    FIXTURE,
+    "/src/shape.zts?import",
+  );
   assert.match(out.code, /__ztsAbsurd/);
 });
 
 test("diagnostics surface through this.error", async () => {
   const plugin = pluginInstance();
   await assert.rejects(
-    plugin.transform.call(ctx, "const r = match (t) { K { v: bad } => v };", "/src/bad.zts"),
+    plugin.transform.call(
+      ctx,
+      "const r = match (t) { K { v: bad } => v };",
+      "/src/bad.zts",
+    ),
     /shorthand identifiers/,
   );
 });

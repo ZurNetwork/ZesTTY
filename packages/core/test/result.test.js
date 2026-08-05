@@ -17,15 +17,27 @@ test("Ok/Err use the kind discriminant", () => {
 });
 
 test("map transforms Ok and passes Err through", () => {
-  assert.deepEqual(map(Ok(2), (n) => n * 3), Ok(6));
+  assert.deepEqual(
+    map(Ok(2), (n) => n * 3),
+    Ok(6),
+  );
   const e = Err("boom");
-  assert.equal(map(e, (n) => n), e);
+  assert.equal(
+    map(e, (n) => n),
+    e,
+  );
 });
 
 test("map_err transforms Err and passes Ok through", () => {
-  assert.deepEqual(map_err(Err(404), (c) => `code ${c}`), Err("code 404"));
+  assert.deepEqual(
+    map_err(Err(404), (c) => `code ${c}`),
+    Err("code 404"),
+  );
   const ok = Ok(1);
-  assert.equal(map_err(ok, (c) => c), ok);
+  assert.equal(
+    map_err(ok, (c) => c),
+    ok,
+  );
 });
 
 test("guards narrow", () => {

@@ -4,12 +4,12 @@ A Rust-flavored **superset of TypeScript** that compiles to plain TypeScript.
 
 **The point is not Rust cosplay — it is safety, enforced at the compiler
 level.** Rust-like syntax is the vehicle; the goal is that entire classes of
-bugs (unhandled variants, unchecked errors) become *compile errors*, while
+bugs (unhandled variants, unchecked errors) become _compile errors_, while
 Rust-style dev patterns (`match`, tagged enums, `Result`) stay ergonomic and
 cheap to use. Every feature must earn its place by making something unsafe
 inexpressible or loudly rejected — not by merely looking Rusty.
 
-Vanilla TS flows through untouched. New Rust-style constructs (`match`, enums-with-data, expression `if`, `Result`) are parsed, semantically checked, and **lowered to idiomatic TS** — then `tsc` verifies the output. We never reimplement TypeScript's type system; we generate code *for* it and weaponize its checker as our backend verifier.
+Vanilla TS flows through untouched. New Rust-style constructs (`match`, enums-with-data, expression `if`, `Result`) are parsed, semantically checked, and **lowered to idiomatic TS** — then `tsc` verifies the output. We never reimplement TypeScript's type system; we generate code _for_ it and weaponize its checker as our backend verifier.
 
 ```
 zts  →  TS  →  JS
@@ -100,8 +100,14 @@ function __ztsAbsurd(x: never): never {
 
 const area = ((__m) => {
   const __k = __m.kind;
-  if (__k === "Circle") { const { radius } = __m; return PI * radius ** 2; }
-  if (__k === "Square") { const { side } = __m; return side ** 2; }
+  if (__k === "Circle") {
+    const { radius } = __m;
+    return PI * radius ** 2;
+  }
+  if (__k === "Square") {
+    const { side } = __m;
+    return side ** 2;
+  }
   return __ztsAbsurd(__k);
 })(shape);
 ```
@@ -113,9 +119,10 @@ aims it. The reported error span must map back to the original `match` in the
 `.zts` file.
 
 Load-bearing details, learned the hard way (review-gated, two rounds):
+
 - It must be an **IIFE**, not a named helper call: TS contextually types
   IIFE parameters from call arguments AND preserves outer `let` narrowing
-  only through IIFEs. The discriminant is the *argument*, so `await`/
+  only through IIFEs. The discriminant is the _argument_, so `await`/
   `yield`/`this` inside it keep working.
 - Testing the alias `__k` still narrows `__m` (TS 4.4 aliased discriminant
   narrowing), and passing `__k` — not `__m` — to the keystone works for both
@@ -136,9 +143,7 @@ A **library feature**, not syntax. Ships as a tiny runtime package
 (`@zestty/core`):
 
 ```ts
-type Result<T, E> =
-  | { kind: "Ok";  value: T }
-  | { kind: "Err"; error: E };
+type Result<T, E> = { kind: "Ok"; value: T } | { kind: "Err"; error: E };
 ```
 
 Plus `Ok()`, `Err()` constructors and `map` / `map_err` combinators. Must use
@@ -162,8 +167,7 @@ Lowers to a discriminated union type + constructors:
 ```ts
 // generated TS
 type Shape =
-  | { kind: "Circle"; radius: number }
-  | { kind: "Square"; side: number };
+  { kind: "Circle"; radius: number } | { kind: "Square"; side: number };
 
 const Shape = {
   Circle: (radius: number): Shape => ({ kind: "Circle", radius }),
@@ -173,7 +177,7 @@ const Shape = {
 
 **Never emit TypeScript `enum`.** Not ever. Tagged unions only.
 
-Note: `enum` in zts source *shadows* TS's enum keyword — this is a deliberate
+Note: `enum` in zts source _shadows_ TS's enum keyword — this is a deliberate
 semantic replacement, the one place zts is not a strict superset. TS `enum`
 syntax should be a hard error with a friendly diagnostic.
 
@@ -237,6 +241,7 @@ These are on the horizon but
 ## Roadmap
 
 ### Phase 1 — `match` vertical slice ✅
+
 - [x] AST: `MatchExpr { span, discriminant, arms }`, `MatchArm { span, variant, binding, body }`, `Expr::Match` variant (fork)
 - [x] Regenerate/extend `swc_ecma_visit` for the new nodes (fork, `cargo test -p generate-code test_ecmascript`)
 - [x] Parser: contextual `match`, checkpoint/backtrack, `str.match(re)` survives (fork)
@@ -250,39 +255,42 @@ no wildcards, no bare variants, no guards, no literals. `await`/`yield` directly
 arm body is a compile error until arms can lower to async IIFEs.
 
 ### Phase 2 — Toolchain ✅ (npm side under `packages/`)
+
 - [x] napi-rs binding (`crates/zestty-napi` → `@zestty/native`; each compile on a
-  64 MiB-stack thread so deep input can't SIGABRT the host; linux-x64 build
-  via `npm run build:native`)
+      64 MiB-stack thread so deep input can't SIGABRT the host; linux-x64 build
+      via `npm run build:native`)
 - [x] Vite plugin (`@zestty/vite-plugin`: `transform` filters `.zts`/`.ztsx`,
-  native zts→TS, then vite's `transformWithEsbuild` TS→JS with `inMap` so
-  the composed map reaches back to the `.zts`)
+      native zts→TS, then vite's `transformWithEsbuild` TS→JS with `inMap` so
+      the composed map reaches back to the `.zts`)
 - [x] Svelte preprocessor (`@zestty/svelte-preprocess`: `<script lang="zts">`
-  → compiled TS + `lang="ts"` attribute rewrite, chain before
-  `vitePreprocess`)
+      → compiled TS + `lang="ts"` attribute rewrite, chain before
+      `vitePreprocess`)
 - [x] Sourcemap proof — headless form: plugin test asserts a position in
-  the final JS maps through both stages back to the originating `.zts`
-  match arm. (Manual browser-devtools breakpoint check still worth one
-  eyeball pass in a real app.)
+      the final JS maps through both stages back to the originating `.zts`
+      match arm. (Manual browser-devtools breakpoint check still worth one
+      eyeball pass in a real app.)
 
 ### Phase 3 — DX
+
 - [ ] TextMate grammar for syntax highlighting
 - [ ] LSP proxy: run tsserver over generated TS, map diagnostics back through sourcemaps (Civet's approach)
 
 ### Phase 4 — Next features (each repeats the Phase 1 loop)
+
 - [x] Enums-with-data (feature #3): zts `enum` grammar in the fork
-  (`parse_any_enum_decl` dispatch; TS member syntax / `const enum` /
-  `declare enum` get friendly errors), lowered pre-resolver to a tagged
-  union type alias + typed factory const. `kind` is a reserved field name.
+      (`parse_any_enum_decl` dispatch; TS member syntax / `const enum` /
+      `declare enum` get friendly errors), lowered pre-resolver to a tagged
+      union type alias + typed factory const. `kind` is a reserved field name.
 - [x] Expression `if` (feature #4): mandatory `else`, else-if chains,
-  blocks-as-expressions (`{ stmts; tail }`). Statement-free chains lower
-  to ternaries (await stays legal); chains with statements lower to an
-  IIFE (await/yield rejected with a diagnostic). Match arm bodies accept
-  the block form too (`=> {` is a block, like arrow bodies — object
-  literals need parens).
+      blocks-as-expressions (`{ stmts; tail }`). Statement-free chains lower
+      to ternaries (await stays legal); chains with statements lower to an
+      IIFE (await/yield rejected with a diagnostic). Match arm bodies accept
+      the block form too (`=> {` is a block, like arrow bodies — object
+      literals need parens).
 - [x] `@zestty/core` with `Result`, `map`, `map_err` (feature #2): plus
-  `is_ok`/`is_err` guards and `unwrap`/`unwrap_or`, all on the `kind`
-  convention. Exit test proves Result + expression-if + match compose and
-  the keystone still fires when the `Err` arm is deleted.
+      `is_ok`/`is_err` guards and `unwrap`/`unwrap_or`, all on the `kind`
+      convention. Exit test proves Result + expression-if + match compose and
+      the keystone still fires when the `Err` arm is deleted.
 - [ ] Then and only then: revisit the deferred list
 
 **Discipline rule: nothing from Phase 4 ships before Phase 2 is green.**
@@ -293,7 +301,7 @@ Language projects die with five features parsed and zero usable in an editor.
 `MAX_EXPR_DEPTH = 2048` assumes ≥8 MiB of stack for the compiler's recursive
 passes in debug builds. Shipping shapes are covered (napi binding: 64 MiB
 thread; CLI: default main-thread stack), but a small-stack host embedding
-`zestty` as a library and feeding it a *legitimate* ~2000-deep expression could
+`zestty` as a library and feeding it a _legitimate_ ~2000-deep expression could
 still abort. Options if this ever matters: lower the constant, or run
 `compile()` on a sized thread like the napi binding does. Pre-existing since
 Phase 1 (twice-gated there); flagged again by the Phase 4 verification round.
