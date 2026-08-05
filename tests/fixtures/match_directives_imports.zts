@@ -1,0 +1,20 @@
+"use client";
+"use strict";
+
+import type { Whatever } from "./elsewhere";
+
+type T = { kind: "K"; v: number } | { kind: "L"; w: number };
+declare const t: T;
+
+const first = match (t) {
+  K { v } => v,
+  L { w } => w,
+};
+
+const second = match (t) {
+  K { v } => v + 1,
+  L { w } => w - 1,
+};
+
+export { first, second };
+export type { Whatever };

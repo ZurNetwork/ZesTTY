@@ -1,7 +1,7 @@
 ---
 source: tests/snapshots.rs
 expression: out.code
-input_file: tests/fixtures/match_hygiene.zts
+input_file: tests/fixtures/match_shadowed_error.zts
 ---
 function __ztsAbsurd(x: never): never {
     throw {
@@ -13,6 +13,7 @@ function __ztsAbsurd(x: never): never {
 function __ztsMatch<T, R>(v: T, f: (v: T) => R): R {
     return f(v);
 }
+export { };
 type T = {
     kind: "K";
     v: number;
@@ -21,16 +22,21 @@ type T = {
     w: number;
 };
 declare const t: T;
-const __m = 99;
-const r = __ztsMatch(t, (__m1)=>{
-    const __k = __m1.kind;
+class Error {
+    constructor(public msg: string){}
+}
+let e: Error = new Error("hi");
+const r = __ztsMatch(t, (__m)=>{
+    const __k = __m.kind;
     if (__k === "K") {
-        const { v } = __m1;
-        return v + __m;
+        const { v } = __m;
+        return v;
     }
     if (__k === "L") {
-        const { w } = __m1;
+        const { w } = __m;
         return w;
     }
     return __ztsAbsurd(__k);
 });
+void e;
+void r;

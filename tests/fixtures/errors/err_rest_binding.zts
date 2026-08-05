@@ -1,0 +1,5 @@
+type T = { kind: "K"; v: number; extra: string };
+declare const t: T;
+const r = match (t) {
+  K { v, ...rest } => v,
+};

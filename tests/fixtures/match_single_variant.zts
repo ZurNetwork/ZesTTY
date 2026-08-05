@@ -1,0 +1,7 @@
+type Only = { kind: "K"; v: number };
+
+declare const t: Only;
+
+const r = match (t) {
+  K { v } => v * 2,
+};

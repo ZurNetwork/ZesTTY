@@ -86,6 +86,16 @@ fn main() -> ExitCode {
             .file_name()
             .map(|f| f.to_string_lossy().into_owned())
             .unwrap_or_default();
+        // The basename is interpolated into the emitted module; a newline
+        // (or comment terminator) in it would inject code into the output.
+        if map_file
+            .chars()
+            .any(|c| matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}'))
+            || map_file.contains("*/")
+        {
+            eprintln!("error: refusing output filename with newline or '*/': {map_file:?}");
+            return ExitCode::FAILURE;
+        }
         code.push_str(&format!("//# sourceMappingURL={map_file}\n"));
     }
 

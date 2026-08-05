@@ -1,0 +1,9 @@
+declare function match(n: number): number;
+
+match(1)
+{
+  console.log(2);
+}
+
+match(3)
+{}

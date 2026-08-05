@@ -14,6 +14,10 @@ fn repo_root() -> &'static Path {
 }
 
 fn tsc(file: &Path) -> (bool, String) {
+    tsc_with(file, &["--strict"])
+}
+
+fn tsc_with(file: &Path, extra: &[&str]) -> (bool, String) {
     let tsc_bin = repo_root().join("node_modules/.bin/tsc");
     assert!(
         tsc_bin.exists(),
@@ -21,7 +25,8 @@ fn tsc(file: &Path) -> (bool, String) {
         tsc_bin.display()
     );
     let out = Command::new(tsc_bin)
-        .args(["--noEmit", "--strict", "--pretty", "false"])
+        .args(["--noEmit", "--pretty", "false"])
+        .args(extra)
         .arg(file)
         .output()
         .expect("failed to spawn tsc");
@@ -65,6 +70,112 @@ fn nested_match_passes_tsc() {
     let (ts_path, _) = compile_to("match_nested.zts", "exit_nested.ts");
     let (ok, text) = tsc(&ts_path);
     assert!(ok, "tsc rejected nested match output:\n{text}");
+}
+
+#[test]
+fn single_variant_exhaustive_match_passes_tsc() {
+    // tsc only narrows unions; the keystone must therefore narrow the
+    // discriminant *property*, or this correct program gets rejected.
+    let (ts_path, _) = compile_to("match_single_variant.zts", "exit_single.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(
+        ok,
+        "tsc rejected a single-variant exhaustive match:\n{text}"
+    );
+}
+
+#[test]
+fn await_in_discriminant_passes_tsc() {
+    let (ts_path, _) = compile_to("match_await_discriminant.zts", "exit_await_disc.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected await-in-discriminant output:\n{text}");
+}
+
+#[test]
+fn shadowed_error_class_passes_tsc() {
+    // The absurd helper must not reference the global `Error`: hygiene
+    // would rename a user class shadowing it and silently change what the
+    // (unrenamed) type annotations refer to.
+    let (ts_path, _) = compile_to("match_shadowed_error.zts", "exit_shadowed_error.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected shadowed-Error output:\n{text}");
+}
+
+#[test]
+fn decorated_class_passes_tsc() {
+    let (ts_path, _) = compile_to("match_decorated_class.zts", "exit_decorated.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected decorated-class output:\n{text}");
+}
+
+#[test]
+fn asi_regression_passes_tsc_and_keeps_calls() {
+    let (ts_path, _) = compile_to("match_asi_regression.zts", "exit_asi.ts");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("match(1)") && code.contains("match(3)"),
+        "ASI call statements must survive compilation:\n{code}"
+    );
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected ASI regression output:\n{text}");
+}
+
+#[test]
+fn directives_stay_in_prologue() {
+    let (ts_path, _) = compile_to("match_directives_imports.zts", "exit_directives.ts");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    let first_directive = code.find("\"use client\"").expect("directive missing");
+    let helper = code.find("__ztsAbsurd").expect("helper missing");
+    let import_pos = code.find("import ").expect("import missing");
+    assert!(
+        first_directive < import_pos && import_pos < helper,
+        "expected directives, then imports, then the helper:\n{code}"
+    );
+    assert_eq!(
+        code.matches("function __ztsAbsurd").count(),
+        1,
+        "two matches must share one helper"
+    );
+}
+
+#[test]
+fn missing_arm_fails_tsc_even_without_strict() {
+    // Users compile generated TS under their own tsconfig; the keystone
+    // must not depend on --strict.
+    let (ts_path, _) = compile_to("match_missing_arm.zts", "exit_missing_nostrict.ts");
+    let (ok, text) = tsc_with(&ts_path, &[]);
+    assert!(!ok, "keystone must hold without --strict");
+    assert!(
+        text.contains("error TS2345"),
+        "unexpected failure mode:\n{text}"
+    );
+}
+
+#[test]
+fn arm_body_maps_to_original_span() {
+    // Phase 2's "breakpoint in .zts" story depends on arm bodies mapping
+    // back to their source, not just the absurd call.
+    let (ts_path, map_json) = compile_to("match_basic.zts", "exit_map_body.ts");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    let (gen_line, gen_col) = code
+        .lines()
+        .enumerate()
+        .find_map(|(i, l)| l.find("PI * radius").map(|c| (i as u32, c as u32)))
+        .expect("lowered arm body not found");
+
+    let sm = swc_sourcemap::SourceMap::from_slice(map_json.as_bytes()).expect("invalid sourcemap");
+    let token = sm
+        .lookup_token(gen_line, gen_col)
+        .expect("no token for arm body");
+
+    let src = std::fs::read_to_string(repo_root().join("tests/fixtures/match_basic.zts")).unwrap();
+    let src_line = src.lines().nth(token.get_src_line() as usize).unwrap();
+    assert!(
+        src_line.contains("PI * radius"),
+        "arm body maps to {:?} (line {}), expected the Circle arm",
+        src_line,
+        token.get_src_line() + 1
+    );
 }
 
 #[test]

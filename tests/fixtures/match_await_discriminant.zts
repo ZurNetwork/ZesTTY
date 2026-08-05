@@ -1,0 +1,12 @@
+type T = { kind: "K"; v: number } | { kind: "L"; w: number };
+
+declare function fetchIt(): Promise<T>;
+
+async function go(): Promise<number> {
+  return match (await fetchIt()) {
+    K { v } => v,
+    L { w } => w * 2,
+  };
+}
+
+void go();

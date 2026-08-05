@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_rest_binding.zts
+---
+error: zts match bindings cannot use rest patterns
+ --> tests/fixtures/errors/err_rest_binding.zts:4:10
+  |
+4 |   K { v, ...rest } => v,
+  |          ^^^^^^^

@@ -1,0 +1,15 @@
+function tagged(): ClassDecorator {
+  return () => {};
+}
+
+type T = { kind: "K"; v: number } | { kind: "L"; w: number };
+
+@tagged()
+export class Svc {
+  pick(t: T): number {
+    return match (t) {
+      K { v } => v,
+      L { w } => w,
+    };
+  }
+}

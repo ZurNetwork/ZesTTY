@@ -1,0 +1,11 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/match_asi_regression.zts
+---
+declare function match(n: number): number;
+match(1);
+{
+    console.log(2);
+}match(3);
+{}

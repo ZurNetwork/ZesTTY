@@ -1,0 +1,52 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/match_directives_imports.zts
+---
+"use client";
+"use strict";
+import type { Whatever } from "./elsewhere";
+function __ztsAbsurd(x: never): never {
+    throw {
+        name: "ZtsNonExhaustiveMatch",
+        message: "zts: non-exhaustive match",
+        kind: x
+    };
+}
+function __ztsMatch<T, R>(v: T, f: (v: T) => R): R {
+    return f(v);
+}
+type T = {
+    kind: "K";
+    v: number;
+} | {
+    kind: "L";
+    w: number;
+};
+declare const t: T;
+const first = __ztsMatch(t, (__m)=>{
+    const __k = __m.kind;
+    if (__k === "K") {
+        const { v } = __m;
+        return v;
+    }
+    if (__k === "L") {
+        const { w } = __m;
+        return w;
+    }
+    return __ztsAbsurd(__k);
+});
+const second = __ztsMatch(t, (__m)=>{
+    const __k = __m.kind;
+    if (__k === "K") {
+        const { v } = __m;
+        return v + 1;
+    }
+    if (__k === "L") {
+        const { w } = __m;
+        return w - 1;
+    }
+    return __ztsAbsurd(__k);
+});
+export { first, second };
+export type { Whatever };

@@ -28,14 +28,41 @@ pub struct Output {
     pub map: String,
 }
 
-pub fn zts_syntax() -> Syntax {
+/// Compiler options. `Default` matches the plain `.zts` CLI path.
+#[derive(Clone, Copy, Debug)]
+pub struct Options {
+    /// Parse JSX (`.ztsx`). Off by default: enabling it makes `<T>expr`
+    /// type assertions ambiguous, exactly as in `.ts` vs `.tsx`.
+    pub tsx: bool,
+    /// Parse decorators. On by default — they are load-bearing TS.
+    pub decorators: bool,
+    /// Embed the original source text in the sourcemap. On for dev;
+    /// build pipelines shipping maps publicly should turn it off.
+    pub inline_sources_content: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options {
+            tsx: false,
+            decorators: true,
+            inline_sources_content: true,
+        }
+    }
+}
+
+pub fn zts_syntax(opts: Options) -> Syntax {
     Syntax::Typescript(TsSyntax {
         zts: true,
+        tsx: opts.tsx,
+        decorators: opts.decorators,
         ..Default::default()
     })
 }
 
-struct MapConfig;
+struct MapConfig {
+    inline_sources_content: bool,
+}
 
 impl SourceMapGenConfig for MapConfig {
     fn file_name_to_source(&self, f: &FileName) -> String {
@@ -43,7 +70,7 @@ impl SourceMapGenConfig for MapConfig {
     }
 
     fn inline_sources_content(&self, _: &FileName) -> bool {
-        true
+        self.inline_sources_content
     }
 }
 
@@ -56,12 +83,13 @@ pub fn compile(
     handler: &Handler,
     filename: FileName,
     source: String,
+    opts: Options,
 ) -> Result<Output> {
     let fm = cm.new_source_file(filename.into(), source);
 
     let comments = SingleThreadedComments::default();
     let lexer = Lexer::new(
-        zts_syntax(),
+        zts_syntax(opts),
         Default::default(),
         StringInput::from(&*fm),
         Some(&comments),
@@ -96,7 +124,7 @@ pub fn compile(
         let unresolved_mark = Mark::new();
         let top_level_mark = Mark::new();
         program.mutate(resolver(unresolved_mark, top_level_mark, true));
-        program.mutate(lower::lower(unresolved_mark));
+        program.mutate(lower::lower());
         program.mutate(hygiene());
     });
 
@@ -107,7 +135,9 @@ pub fn compile(
     {
         let wr = JsWriter::new(cm.clone(), "\n", &mut buf, Some(&mut srcmap));
         let mut emitter = Emitter {
-            cfg: Config::default(),
+            // inline_script: escape `</script>` etc. in string literals —
+            // the Svelte preprocessor writes output back into <script> tags.
+            cfg: Config::default().with_inline_script(true),
             cm: cm.clone(),
             comments: Some(&comments),
             wr,
@@ -117,7 +147,13 @@ pub fn compile(
 
     let code = String::from_utf8(buf).context("codegen produced invalid utf-8")?;
 
-    let map = cm.build_source_map(&srcmap, None, MapConfig);
+    let map = cm.build_source_map(
+        &srcmap,
+        None,
+        MapConfig {
+            inline_sources_content: opts.inline_sources_content,
+        },
+    );
     let mut map_buf = Vec::new();
     map.to_writer(&mut map_buf)
         .context("failed to serialize sourcemap")?;
@@ -126,10 +162,20 @@ pub fn compile(
     Ok(Output { code, map })
 }
 
-/// Compiles a `.zts` file on disk (convenience wrapper for the CLI and
-/// tests).
+/// Compiles a `.zts`/`.ztsx` file on disk (convenience wrapper for the CLI
+/// and tests). `.ztsx` turns on JSX parsing, mirroring `.ts`/`.tsx`.
 pub fn compile_file(cm: &Lrc<SourceMap>, handler: &Handler, path: &Path) -> Result<Output> {
     let source = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    compile(cm, handler, FileName::Real(path.to_path_buf()), source)
+    let opts = Options {
+        tsx: path.extension().is_some_and(|e| e == "ztsx"),
+        ..Default::default()
+    };
+    compile(
+        cm,
+        handler,
+        FileName::Real(path.to_path_buf()),
+        source,
+        opts,
+    )
 }

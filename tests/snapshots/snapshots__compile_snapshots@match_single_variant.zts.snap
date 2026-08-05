@@ -1,7 +1,7 @@
 ---
 source: tests/snapshots.rs
 expression: out.code
-input_file: tests/fixtures/match_missing_arm.zts
+input_file: tests/fixtures/match_single_variant.zts
 ---
 function __ztsAbsurd(x: never): never {
     throw {
@@ -13,19 +13,16 @@ function __ztsAbsurd(x: never): never {
 function __ztsMatch<T, R>(v: T, f: (v: T) => R): R {
     return f(v);
 }
-type Shape = {
-    kind: "Circle";
-    radius: number;
-} | {
-    kind: "Square";
-    side: number;
+type Only = {
+    kind: "K";
+    v: number;
 };
-declare const shape: Shape;
-const area = __ztsMatch(shape, (__m)=>{
+declare const t: Only;
+const r = __ztsMatch(t, (__m)=>{
     const __k = __m.kind;
-    if (__k === "Circle") {
-        const { radius } = __m;
-        return radius * 2;
+    if (__k === "K") {
+        const { v } = __m;
+        return v * 2;
     }
     return __ztsAbsurd(__k);
 });

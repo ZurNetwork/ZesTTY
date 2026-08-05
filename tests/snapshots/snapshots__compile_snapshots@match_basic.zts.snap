@@ -4,7 +4,14 @@ expression: out.code
 input_file: tests/fixtures/match_basic.zts
 ---
 function __ztsAbsurd(x: never): never {
-    throw new Error("zts: non-exhaustive match");
+    throw {
+        name: "ZtsNonExhaustiveMatch",
+        message: "zts: non-exhaustive match",
+        kind: x
+    };
+}
+function __ztsMatch<T, R>(v: T, f: (v: T) => R): R {
+    return f(v);
 }
 type Shape = {
     kind: "Circle";
@@ -15,16 +22,16 @@ type Shape = {
 };
 const PI = 3.141592653589793;
 declare const shape: Shape;
-const area = (()=>{
-    const __m = shape;
-    if (__m.kind === "Circle") {
+const area = __ztsMatch(shape, (__m)=>{
+    const __k = __m.kind;
+    if (__k === "Circle") {
         const { radius } = __m;
         return PI * radius ** 2;
     }
-    if (__m.kind === "Square") {
+    if (__k === "Square") {
         const { side } = __m;
         return side ** 2;
     }
-    return __ztsAbsurd(__m);
-})();
+    return __ztsAbsurd(__k);
+});
 console.log(area);

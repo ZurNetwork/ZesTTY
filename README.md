@@ -80,19 +80,34 @@ const area = match (shape) {
 Lowers to:
 
 ```ts
-// generated TS
-const area = (() => {
-  const __m = shape;
-  if (__m.kind === "Circle") { const { radius } = __m; return PI * radius ** 2; }
-  if (__m.kind === "Square") { const { side } = __m; return side ** 2; }
-  return __ztsAbsurd(__m);
-})();
+// generated TS (helpers injected once per module)
+function __ztsAbsurd(x: never): never { throw { name: "ZtsNonExhaustiveMatch", ... }; }
+function __ztsMatch<T, R>(v: T, f: (v: T) => R): R { return f(v); }
+
+const area = __ztsMatch(shape, (__m) => {
+  const __k = __m.kind;
+  if (__k === "Circle") { const { radius } = __m; return PI * radius ** 2; }
+  if (__k === "Square") { const { side } = __m; return side ** 2; }
+  return __ztsAbsurd(__k);
+});
 ```
 
-`__ztsAbsurd(x: never): never` is the keystone: if an arm is missing, `__m`
+`__ztsAbsurd(x: never): never` is the keystone: if an arm is missing, `__k`
 does not narrow to `never` and **tsc rejects the generated code**. TypeScript's
 own checker proves exhaustiveness — zts just aims it. The reported error span
 must map back to the original `match` in the `.zts` file.
+
+Three load-bearing details, learned the hard way (review-gated):
+- The generic `__ztsMatch` helper (not a bare IIFE) is what types `__m`:
+  an IIFE parameter is implicitly `any`, and evaluating the discriminant as
+  an argument keeps `await`/`yield`/`this` in it working.
+- Testing the alias `__k` still narrows `__m` (TS 4.4 aliased discriminant
+  narrowing), and passing `__k` to the keystone works for both union and
+  single-variant types — `__m` itself would be `never` (TS2339) in one case
+  and never-narrowing in the other.
+- `__ztsAbsurd` throws a plain object, never `new Error(...)`: a global
+  `Error` reference would make hygiene rename user classes shadowing it,
+  silently changing what type annotations mean.
 
 Parser note: `match` is a **contextual keyword**. `str.match(re)` must keep
 working. On `match (expr) {`, checkpoint (`ParserCheckpoint`), attempt a

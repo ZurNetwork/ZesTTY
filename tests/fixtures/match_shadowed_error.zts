@@ -1,0 +1,18 @@
+export {};
+
+type T = { kind: "K"; v: number } | { kind: "L"; w: number };
+declare const t: T;
+
+class Error {
+  constructor(public msg: string) {}
+}
+
+let e: Error = new Error("hi");
+
+const r = match (t) {
+  K { v } => v,
+  L { w } => w,
+};
+
+void e;
+void r;
