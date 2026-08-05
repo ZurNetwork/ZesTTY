@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_duplicate_variant.zts
+---
+error: duplicate match arm for variant `K`
+ --> tests/fixtures/errors/err_duplicate_variant.zts:5:3
+  |
+5 |   K { v } => v + 1,
+  |   ^

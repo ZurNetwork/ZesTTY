@@ -1,0 +1,19 @@
+{
+  "name": "zts",
+  "version": "1.0.0",
+  "description": "A Rust-flavored **superset of TypeScript** that compiles to plain TypeScript.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

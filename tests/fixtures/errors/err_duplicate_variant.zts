@@ -1,0 +1,7 @@
+type T = { kind: "K"; v: number } | { kind: "L"; w: number };
+declare const t: T;
+const r = match (t) {
+  K { v } => v,
+  K { v } => v + 1,
+  L { w } => w,
+};

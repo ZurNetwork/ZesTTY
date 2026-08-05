@@ -1,0 +1,46 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/match_nested.zts
+---
+function __ztsAbsurd(x: never): never {
+    throw new Error("zts: non-exhaustive match");
+}
+type Inner = {
+    kind: "A";
+    x: number;
+} | {
+    kind: "B";
+    y: number;
+};
+type Outer = {
+    kind: "Left";
+    inner: Inner;
+} | {
+    kind: "Right";
+    label: string;
+};
+declare const o: Outer;
+const n = (()=>{
+    const __m = o;
+    if (__m.kind === "Left") {
+        const { inner } = __m;
+        return (()=>{
+            const __m = inner;
+            if (__m.kind === "A") {
+                const { x } = __m;
+                return x;
+            }
+            if (__m.kind === "B") {
+                const { y } = __m;
+                return y * 2;
+            }
+            return __ztsAbsurd(__m);
+        })();
+    }
+    if (__m.kind === "Right") {
+        const { label } = __m;
+        return label.length;
+    }
+    return __ztsAbsurd(__m);
+})();

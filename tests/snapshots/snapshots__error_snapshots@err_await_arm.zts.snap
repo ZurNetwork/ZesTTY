@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_await_arm.zts
+---
+error: `await` inside a match arm is not supported yet (arms lower to a synchronous IIFE)
+ --> tests/fixtures/errors/err_await_arm.zts:7:16
+  |
+7 |     K { v } => await fetchIt(v),
+  |                ^^^^^^^^^^^^^^^^

@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/match_missing_arm.zts
+---
+function __ztsAbsurd(x: never): never {
+    throw new Error("zts: non-exhaustive match");
+}
+type Shape = {
+    kind: "Circle";
+    radius: number;
+} | {
+    kind: "Square";
+    side: number;
+};
+declare const shape: Shape;
+const area = (()=>{
+    const __m = shape;
+    if (__m.kind === "Circle") {
+        const { radius } = __m;
+        return radius * 2;
+    }
+    return __ztsAbsurd(__m);
+})();

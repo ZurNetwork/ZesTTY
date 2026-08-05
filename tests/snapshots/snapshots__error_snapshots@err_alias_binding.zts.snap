@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_alias_binding.zts
+---
+error: zts match bindings must be shorthand identifiers (`{ field }`, not `{ field: alias }`)
+ --> tests/fixtures/errors/err_alias_binding.zts:4:7
+  |
+4 |   K { v: renamed } => renamed,
+  |       ^

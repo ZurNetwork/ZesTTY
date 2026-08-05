@@ -1,0 +1,8 @@
+declare const str: string;
+declare const re: RegExp;
+declare function match(n: number): number;
+
+const a = str.match(re);
+const b = match(1);
+const c = match(1) + 2;
+const d = match(1) ? 2 : 3;

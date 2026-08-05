@@ -1,0 +1,9 @@
+type T = { kind: "K"; v: number };
+declare const t: T;
+declare function fetchIt(v: number): Promise<number>;
+
+async function go(): Promise<number> {
+  return match (t) {
+    K { v } => await fetchIt(v),
+  };
+}

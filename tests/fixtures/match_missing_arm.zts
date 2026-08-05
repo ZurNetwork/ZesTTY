@@ -1,0 +1,9 @@
+type Shape =
+  | { kind: "Circle"; radius: number }
+  | { kind: "Square"; side: number };
+
+declare const shape: Shape;
+
+const area = match (shape) {
+  Circle { radius } => radius * 2,
+};

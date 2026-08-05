@@ -1,0 +1,17 @@
+type Inner =
+  | { kind: "A"; x: number }
+  | { kind: "B"; y: number };
+
+type Outer =
+  | { kind: "Left"; inner: Inner }
+  | { kind: "Right"; label: string };
+
+declare const o: Outer;
+
+const n = match (o) {
+  Left { inner } => match (inner) {
+    A { x } => x,
+    B { y } => y * 2,
+  },
+  Right { label } => label.length,
+};

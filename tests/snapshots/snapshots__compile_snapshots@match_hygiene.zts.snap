@@ -1,0 +1,29 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/match_hygiene.zts
+---
+function __ztsAbsurd(x: never): never {
+    throw new Error("zts: non-exhaustive match");
+}
+type T = {
+    kind: "K";
+    v: number;
+} | {
+    kind: "L";
+    w: number;
+};
+declare const t: T;
+const __m = 99;
+const r = (()=>{
+    const __m1 = t;
+    if (__m1.kind === "K") {
+        const { v } = __m1;
+        return v + __m;
+    }
+    if (__m1.kind === "L") {
+        const { w } = __m1;
+        return w;
+    }
+    return __ztsAbsurd(__m1);
+})();

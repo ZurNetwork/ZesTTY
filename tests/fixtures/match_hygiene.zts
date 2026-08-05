@@ -1,0 +1,10 @@
+type T = { kind: "K"; v: number } | { kind: "L"; w: number };
+
+declare const t: T;
+
+const __m = 99;
+
+const r = match (t) {
+  K { v } => v + __m,
+  L { w } => w,
+};

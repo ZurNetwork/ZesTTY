@@ -1,0 +1,5 @@
+type T = { kind: "K"; v: number };
+declare const t: T;
+const r = match (t) {
+  K { v: renamed } => renamed,
+};

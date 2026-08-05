@@ -53,12 +53,13 @@ Two sibling repos:
 
 ## Current status
 
-- ✅ Milestone 0: identity compiler. `main.rs` parses a `.zts` file (vanilla TS
-  syntax) via the fork's parser and emits it back out via `swc_ecma_codegen`.
-  Round-trip confirmed.
-- ✅ Fork cloned (`../swc_rustify`), `main` tracking upstream.
-- ⬜ `zts` branch in the fork (create before the first fork edit).
-- ⬜ Everything below.
+- ✅ Milestone 0: identity compiler (round-trip confirmed).
+- ✅ Fork cloned (`../swc_rustify`), `zts` branch carrying the extensions,
+  `main` clean tracking upstream.
+- ✅ Phase 1: `match` vertical slice complete (see checklist below). Crate
+  renamed to `ztsc`; `cargo test` runs snapshot + tsc exit tests
+  (needs `npm install` for the local tsc).
+- ⬜ Phase 2 and beyond.
 
 ---
 
@@ -187,14 +188,18 @@ newtypes, no-untracked-throws, move checking. These are on the horizon but
 
 ## Roadmap
 
-### Phase 1 — `match` vertical slice
-- [ ] AST: `MatchExpr { span, discriminant, arms }`, `MatchArm { span, variant, binding, body }`, `Expr::Match` variant (fork)
-- [ ] Regenerate/extend `swc_ecma_visit` for the new nodes (fork)
-- [ ] Parser: contextual `match`, checkpoint/backtrack, `str.match(re)` survives (fork)
-- [ ] Lowering pass: match → IIFE + if-chain + `__ztsAbsurd` (zts)
-- [ ] Emit via stock codegen, original spans preserved (zts)
-- [ ] CLI: `ztsc file.zts` → `file.ts` (+ `.ts.map`) (zts)
-- [ ] **Exit test:** delete an arm from a snapshot fixture, run tsc on the output, confirm the `never` error surfaces with a span pointing at the original `match`
+### Phase 1 — `match` vertical slice ✅
+- [x] AST: `MatchExpr { span, discriminant, arms }`, `MatchArm { span, variant, binding, body }`, `Expr::Match` variant (fork)
+- [x] Regenerate/extend `swc_ecma_visit` for the new nodes (fork, `cargo test -p generate-code test_ecmascript`)
+- [x] Parser: contextual `match`, checkpoint/backtrack, `str.match(re)` survives (fork)
+- [x] Lowering pass: match → IIFE + if-chain + `__ztsAbsurd` (zts, plus resolver+hygiene for `__zts` name collisions)
+- [x] Emit via stock codegen, original spans preserved (zts)
+- [x] CLI: `ztsc file.zts` → `file.ts` (+ `.ts.map`) (zts)
+- [x] **Exit test:** `tests/tsc_exit.rs` — deleting an arm makes tsc emit TS2345 on the generated TS, and the error position maps through the sourcemap back to the original `match`
+
+Phase 1 scope notes (locked by Zuri): arms are strictly `Variant { bindings } => expr` —
+no wildcards, no bare variants, no guards, no literals. `await`/`yield` directly in an
+arm body is a compile error until arms can lower to async IIFEs.
 
 ### Phase 2 — Toolchain
 - [ ] napi-rs binding
