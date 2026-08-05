@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_enum_dup_variant.zts
+---
+error: duplicate enum variant `A`
+ --> tests/fixtures/errors/err_enum_dup_variant.zts:3:3
+  |
+3 |   A { w: number },
+  |   ^

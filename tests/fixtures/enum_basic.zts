@@ -1,0 +1,13 @@
+enum Shape {
+  Circle { radius: number },
+  Square { side: number },
+}
+
+const c = Shape.Circle(2);
+
+const area = match (c) {
+  Circle { radius } => 3.14159 * radius ** 2,
+  Square { side } => side ** 2,
+};
+
+console.log(area);

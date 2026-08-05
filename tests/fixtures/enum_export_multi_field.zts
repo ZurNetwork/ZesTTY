@@ -1,0 +1,15 @@
+export enum Event {
+  Click { x: number, y: number },
+  Key { code: string },
+  Blur {},
+}
+
+export function describe(e: Event): string {
+  return match (e) {
+    Click { x, y } => `click at ${x},${y}`,
+    Key { code } => `key ${code}`,
+    Blur {} => "blur",
+  };
+}
+
+export const sample = Event.Click(1, 2);

@@ -210,6 +210,37 @@ impl Visit for Checker<'_> {
         s.visit_children_with(self);
     }
 
+    fn visit_zts_enum_decl(&mut self, e: &ZtsEnumDecl) {
+        let mut seen: HashSet<&swc_atoms::Atom> = HashSet::with_capacity(e.variants.len());
+        for variant in &e.variants {
+            if !seen.insert(&variant.name.sym) {
+                self.err(
+                    variant.name.span,
+                    &format!("duplicate enum variant `{}`", variant.name.sym),
+                );
+            }
+
+            let mut fields: HashSet<&swc_atoms::Atom> =
+                HashSet::with_capacity(variant.fields.len());
+            for field in &variant.fields {
+                if field.name.sym == "kind" {
+                    self.err(
+                        field.name.span,
+                        "`kind` is reserved: it is the discriminant field every zts tagged \
+                         union carries",
+                    );
+                }
+                if !fields.insert(&field.name.sym) {
+                    self.err(
+                        field.name.span,
+                        &format!("duplicate field `{}` in enum variant", field.name.sym),
+                    );
+                }
+            }
+        }
+        e.visit_children_with(self);
+    }
+
     fn visit_ts_enum_decl(&mut self, e: &TsEnumDecl) {
         self.err(
             e.span,

@@ -1,0 +1,53 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/enum_export_multi_field.zts
+---
+function __ztsAbsurd(x: never): never {
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
+}
+export type Event = {
+    kind: "Click";
+    x: number;
+    y: number;
+} | {
+    kind: "Key";
+    code: string;
+} | {
+    kind: "Blur";
+};
+export const Event = {
+    Click: (x: number, y: number): Event =>({
+            kind: "Click",
+            x,
+            y
+        }),
+    Key: (code: string): Event =>({
+            kind: "Key",
+            code
+        }),
+    Blur: (): Event =>({
+            kind: "Blur"
+        })
+};
+export function describe(e: Event): string {
+    return ((__m)=>{
+        const __k = __m.kind;
+        if (__k === "Click") {
+            const { x, y } = __m;
+            return `click at ${x},${y}`;
+        }
+        if (__k === "Key") {
+            const { code } = __m;
+            return `key ${code}`;
+        }
+        if (__k === "Blur") {
+            const {} = __m;
+            return "blur";
+        }
+        return __ztsAbsurd(__k);
+    })(e);
+}
+export const sample = Event.Click(1, 2);

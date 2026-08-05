@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_enum_kind_field.zts
+---
+error: `kind` is reserved: it is the discriminant field every zts tagged union carries
+ --> tests/fixtures/errors/err_enum_kind_field.zts:2:7
+  |
+2 |   A { kind: string },
+  |       ^^^^

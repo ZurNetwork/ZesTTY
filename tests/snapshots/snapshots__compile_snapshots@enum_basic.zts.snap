@@ -1,0 +1,41 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/enum_basic.zts
+---
+function __ztsAbsurd(x: never): never {
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
+}
+type Shape = {
+    kind: "Circle";
+    radius: number;
+} | {
+    kind: "Square";
+    side: number;
+};
+const Shape = {
+    Circle: (radius: number): Shape =>({
+            kind: "Circle",
+            radius
+        }),
+    Square: (side: number): Shape =>({
+            kind: "Square",
+            side
+        })
+};
+const c = Shape.Circle(2);
+const area = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Circle") {
+        const { radius } = __m;
+        return 3.14159 * radius ** 2;
+    }
+    if (__k === "Square") {
+        const { side } = __m;
+        return side ** 2;
+    }
+    return __ztsAbsurd(__k);
+})(c);
+console.log(area);

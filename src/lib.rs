@@ -5,6 +5,7 @@
 //! backend verifier; we never reimplement it.
 
 pub mod lower;
+pub mod lower_enums;
 pub mod semantic;
 
 use std::path::Path;
@@ -129,6 +130,11 @@ pub fn compile(
     let mut program = Program::Module(module);
 
     GLOBALS.set(&Default::default(), || {
+        // Enums lower BEFORE the resolver: they expand into ordinary
+        // user-named declarations (type alias + const), which the resolver
+        // then scopes exactly like hand-written code.
+        program.mutate(lower_enums::lower_enums());
+
         let unresolved_mark = Mark::new();
         let top_level_mark = Mark::new();
         program.mutate(resolver(unresolved_mark, top_level_mark, true));

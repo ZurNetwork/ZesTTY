@@ -1,0 +1,6 @@
+enum Bad {
+  A { v: number },
+  A { w: number },
+}
+
+void Bad;

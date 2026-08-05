@@ -1,0 +1,47 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/enum_generic_types.zts
+---
+function __ztsAbsurd(x: never): never {
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
+}
+type Tree = {
+    kind: "Leaf";
+    value: number;
+} | {
+    kind: "Node";
+    left: Tree;
+    right: Tree;
+    tags: string[];
+};
+const Tree = {
+    Leaf: (value: number): Tree =>({
+            kind: "Leaf",
+            value
+        }),
+    Node: (left: Tree, right: Tree, tags: string[]): Tree =>({
+            kind: "Node",
+            left,
+            right,
+            tags
+        })
+};
+declare const t: Tree;
+function sum(tree: Tree): number {
+    return ((__m)=>{
+        const __k = __m.kind;
+        if (__k === "Leaf") {
+            const { value } = __m;
+            return value;
+        }
+        if (__k === "Node") {
+            const { left, right } = __m;
+            return sum(left) + sum(right);
+        }
+        return __ztsAbsurd(__k);
+    })(tree);
+}
+console.log(sum(t));

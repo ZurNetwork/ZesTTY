@@ -1,10 +1,10 @@
 ---
 source: tests/snapshots.rs
 expression: diags
-input_file: tests/fixtures/errors/err_ts_enum.zts
+input_file: tests/fixtures/errors/err_enum_ts_members.zts
 ---
 error: zts enum variants take the form `Variant { field: Type, ... }` — TypeScript enum members are not supported; zts `enum` lowers to a tagged union + factory functions
- --> tests/fixtures/errors/err_ts_enum.zts:2:3
+ --> tests/fixtures/errors/err_enum_ts_members.zts:2:3
   |
 2 |   Red,
   |   ^^^

@@ -1,0 +1,15 @@
+enum Tree {
+  Leaf { value: number },
+  Node { left: Tree, right: Tree, tags: string[] },
+}
+
+declare const t: Tree;
+
+function sum(tree: Tree): number {
+  return match (tree) {
+    Leaf { value } => value,
+    Node { left, right } => sum(left) + sum(right),
+  };
+}
+
+console.log(sum(t));

@@ -189,6 +189,54 @@ fn arm_body_maps_to_original_span() {
 }
 
 #[test]
+fn enum_basic_passes_tsc() {
+    let (ts_path, _) = compile_to("enum_basic.zts", "exit_enum_basic.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected lowered enum + match:\n{text}");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        !code.contains("enum "),
+        "output must never contain a TS enum:\n{code}"
+    );
+}
+
+#[test]
+fn enum_export_passes_tsc() {
+    let (ts_path, _) = compile_to("enum_export_multi_field.zts", "exit_enum_export.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected exported enum output:\n{text}");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert_eq!(
+        code.matches("export ").count() >= 4,
+        true,
+        "both the type alias and the factory const must stay exported:\n{code}"
+    );
+}
+
+#[test]
+fn enum_recursive_passes_tsc() {
+    let (ts_path, _) = compile_to("enum_generic_types.zts", "exit_enum_tree.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected recursive enum output:\n{text}");
+}
+
+#[test]
+fn enum_wrong_factory_arg_fails_tsc() {
+    // The factories must be TYPED: passing a string where the field says
+    // number has to be a tsc error.
+    let (out, diags) =
+        common::compile_fixture(&repo_root().join("tests/fixtures/enum_basic.zts")).unwrap();
+    assert_eq!(diags, "");
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    let bad = format!("{}\nShape.Circle(\"oops\");\n", out.code);
+    let bad_path = dir.join("exit_enum_bad_arg.ts");
+    std::fs::write(&bad_path, bad).unwrap();
+    let (ok, text) = tsc(&bad_path);
+    assert!(!ok, "tsc must reject a mistyped factory argument");
+    assert!(text.contains("error TS"), "unexpected output:\n{text}");
+}
+
+#[test]
 fn missing_arm_fails_tsc_and_maps_to_match() {
     let (ts_path, map_json) = compile_to("match_missing_arm.zts", "exit_missing.ts");
     let (ok, text) = tsc(&ts_path);
