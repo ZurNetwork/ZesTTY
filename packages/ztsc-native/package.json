@@ -1,0 +1,18 @@
+{
+  "name": "@zts/native",
+  "version": "0.1.0",
+  "description": "Native (napi) binding to the ztsc compiler. Linux x64 only for now; run `npm run build:native` at the repo root to (re)build.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ],
+  "scripts": {
+    "test": "node --test"
+  }
+}

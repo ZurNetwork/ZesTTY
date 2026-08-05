@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "crates/ztsc-napi"]
+
 [package]
 name = "ztsc"
 version = "0.1.0"

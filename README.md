@@ -59,7 +59,16 @@ Two sibling repos:
 - ✅ Phase 1: `match` vertical slice complete (see checklist below). Crate
   renamed to `ztsc`; `cargo test` runs snapshot + tsc exit tests
   (needs `npm install` for the local tsc).
-- ⬜ Phase 2 and beyond.
+- ✅ Phase 1 review gate: adversarial code review + security review (two
+  independent reviewers, two verification rounds each). Highlights baked in:
+  packrat memo + single-parse commit path (nested-match DoS), stacker-backed
+  parser recursion + semantic depth limit 2048 + leak-don't-drop for
+  over-deep ASTs, directive-prologue-safe helper injection, IIFE lowering
+  for narrowing, globalThis.Error keystone throw with `ztsTag`.
+- ✅ Phase 2: toolchain. npm workspace under `packages/` (`@zts/native`,
+  `@zts/vite-plugin`, `@zts/svelte-preprocess`), all with node:test suites;
+  `npm test` runs them, `npm run build:native` rebuilds the binding.
+- ⬜ Phase 3 (DX) and Phase 4 (remaining features).
 
 ---
 
@@ -216,11 +225,20 @@ Phase 1 scope notes (locked by Zuri): arms are strictly `Variant { bindings } =>
 no wildcards, no bare variants, no guards, no literals. `await`/`yield` directly in an
 arm body is a compile error until arms can lower to async IIFEs.
 
-### Phase 2 — Toolchain
-- [ ] napi-rs binding
-- [ ] Vite plugin (`transform` hook filters `.zts`, returns `{ code, map }`)
-- [ ] Svelte preprocessor for `<script lang="zts">` (chained before `vitePreprocess`, exactly how `lang="ts"` works — no changes to `.svelte` structure)
-- [ ] Sourcemap proof: breakpoint set in `.zts` hits in browser devtools
+### Phase 2 — Toolchain ✅ (npm side under `packages/`)
+- [x] napi-rs binding (`crates/ztsc-napi` → `@zts/native`; each compile on a
+  64 MiB-stack thread so deep input can't SIGABRT the host; linux-x64 build
+  via `npm run build:native`)
+- [x] Vite plugin (`@zts/vite-plugin`: `transform` filters `.zts`/`.ztsx`,
+  native zts→TS, then vite's `transformWithEsbuild` TS→JS with `inMap` so
+  the composed map reaches back to the `.zts`)
+- [x] Svelte preprocessor (`@zts/svelte-preprocess`: `<script lang="zts">`
+  → compiled TS + `lang="ts"` attribute rewrite, chain before
+  `vitePreprocess`)
+- [x] Sourcemap proof — headless form: plugin test asserts a position in
+  the final JS maps through both stages back to the originating `.zts`
+  match arm. (Manual browser-devtools breakpoint check still worth one
+  eyeball pass in a real app.)
 
 ### Phase 3 — DX
 - [ ] TextMate grammar for syntax highlighting

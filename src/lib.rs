@@ -170,6 +170,66 @@ pub fn compile(
     Ok(Output { code, map })
 }
 
+/// Compilation failed; `diagnostics` holds the rendered error text.
+#[derive(Debug)]
+pub struct CompileFailure {
+    pub diagnostics: String,
+}
+
+impl std::fmt::Display for CompileFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.diagnostics)
+    }
+}
+
+impl std::error::Error for CompileFailure {}
+
+/// Self-contained entry point for embedders (napi bindings, plugins):
+/// creates its own SourceMap and a diagnostics-capturing handler, and
+/// returns the rendered diagnostics on failure instead of printing them.
+pub fn compile_source(
+    filename: &str,
+    source: String,
+    opts: Options,
+) -> std::result::Result<Output, CompileFailure> {
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct Buf(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Buf {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().write(b)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let cm: Lrc<SourceMap> = Default::default();
+    let buf = Buf::default();
+    let emitter = swc_common::errors::EmitterWriter::new(
+        Box::new(buf.clone()),
+        Some(cm.clone()),
+        false,
+        false,
+    );
+    let handler = Handler::with_emitter_and_flags(Box::new(emitter), Default::default());
+
+    let result = compile(
+        &cm,
+        &handler,
+        FileName::Custom(filename.to_string()),
+        source,
+        opts,
+    );
+
+    result.map_err(|_| CompileFailure {
+        diagnostics: String::from_utf8_lossy(&buf.0.lock().unwrap()).into_owned(),
+    })
+}
+
 /// Compiles a `.zts`/`.ztsx` file on disk (convenience wrapper for the CLI
 /// and tests). `.ztsx` turns on JSX parsing, mirroring `.ts`/`.tsx`.
 pub fn compile_file(cm: &Lrc<SourceMap>, handler: &Handler, path: &Path) -> Result<Output> {

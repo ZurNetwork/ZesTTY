@@ -1,0 +1,22 @@
+{
+  "name": "@zts/svelte-preprocess",
+  "version": "0.1.0",
+  "description": "Svelte preprocessor for <script lang=\"zts\">: compiles zts to TS and hands off to vitePreprocess exactly like lang=\"ts\".",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@zts/native": "0.1.0"
+  },
+  "peerDependencies": {
+    "svelte": ">=4"
+  },
+  "devDependencies": {
+    "svelte": "^5.42.0"
+  }
+}

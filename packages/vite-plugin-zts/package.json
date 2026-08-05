@@ -1,0 +1,23 @@
+{
+  "name": "@zts/vite-plugin",
+  "version": "0.1.0",
+  "description": "Vite plugin for .zts/.ztsx files: zts → TS (native compiler) → JS (vite's esbuild), sourcemaps composed end-to-end.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@zts/native": "0.1.0"
+  },
+  "peerDependencies": {
+    "vite": ">=5"
+  },
+  "devDependencies": {
+    "vite": "^7.3.0",
+    "source-map-js": "^1.2.0"
+  }
+}
