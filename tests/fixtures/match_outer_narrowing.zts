@@ -1,0 +1,17 @@
+type T = { kind: "K"; v: number } | { kind: "L"; w: number };
+declare const t: T;
+
+let s: string | number = "a";
+export function reassign(): void {
+  s = 1;
+}
+
+let r = 0;
+if (typeof s === "string") {
+  r = match (t) {
+    K { v } => s.length + v,
+    L { w } => w,
+  };
+}
+
+export { r };

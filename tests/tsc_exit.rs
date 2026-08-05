@@ -85,6 +85,16 @@ fn single_variant_exhaustive_match_passes_tsc() {
 }
 
 #[test]
+fn outer_let_narrowing_survives_in_arm_bodies() {
+    // TS preserves control-flow narrowing of outer `let`s inside an
+    // IIFE, but NOT inside a callback passed to a named helper. The
+    // lowering must stay an IIFE or this correct program is rejected.
+    let (ts_path, _) = compile_to("match_outer_narrowing.zts", "exit_outer_narrowing.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "outer let narrowing lost in arm bodies:\n{text}");
+}
+
+#[test]
 fn await_in_discriminant_passes_tsc() {
     let (ts_path, _) = compile_to("match_await_discriminant.zts", "exit_await_disc.ts");
     let (ok, text) = tsc(&ts_path);

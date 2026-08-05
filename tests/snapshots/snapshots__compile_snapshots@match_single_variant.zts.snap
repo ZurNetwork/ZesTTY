@@ -4,25 +4,20 @@ expression: out.code
 input_file: tests/fixtures/match_single_variant.zts
 ---
 function __ztsAbsurd(x: never): never {
-    throw {
-        name: "ZtsNonExhaustiveMatch",
-        message: "zts: non-exhaustive match",
-        kind: x
-    };
-}
-function __ztsMatch<T, R>(v: T, f: (v: T) => R): R {
-    return f(v);
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
 }
 type Only = {
     kind: "K";
     v: number;
 };
 declare const t: Only;
-const r = __ztsMatch(t, (__m)=>{
+const r = ((__m)=>{
     const __k = __m.kind;
     if (__k === "K") {
         const { v } = __m;
         return v * 2;
     }
     return __ztsAbsurd(__k);
-});
+})(t);

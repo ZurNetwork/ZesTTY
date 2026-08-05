@@ -4,14 +4,9 @@ expression: out.code
 input_file: tests/fixtures/match_shadowed_error.zts
 ---
 function __ztsAbsurd(x: never): never {
-    throw {
-        name: "ZtsNonExhaustiveMatch",
-        message: "zts: non-exhaustive match",
-        kind: x
-    };
-}
-function __ztsMatch<T, R>(v: T, f: (v: T) => R): R {
-    return f(v);
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
 }
 export { };
 type T = {
@@ -26,7 +21,7 @@ class Error {
     constructor(public msg: string){}
 }
 let e: Error = new Error("hi");
-const r = __ztsMatch(t, (__m)=>{
+const r = ((__m)=>{
     const __k = __m.kind;
     if (__k === "K") {
         const { v } = __m;
@@ -37,6 +32,6 @@ const r = __ztsMatch(t, (__m)=>{
         return w;
     }
     return __ztsAbsurd(__k);
-});
+})(t);
 void e;
 void r;
