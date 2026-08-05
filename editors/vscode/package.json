@@ -1,0 +1,44 @@
+{
+  "name": "zestty",
+  "displayName": "ZesTTY",
+  "description": "Language support for ZesTTY (zts) — a Rust-flavored superset of TypeScript with compiler-enforced exhaustiveness.",
+  "version": "0.1.0",
+  "publisher": "zurnetwork",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZurNetwork/ZesTTY.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "zts",
+        "aliases": [
+          "ZesTTY",
+          "zts"
+        ],
+        "extensions": [
+          ".zts",
+          ".ztsx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "zts",
+        "scopeName": "source.zts",
+        "path": "./syntaxes/zts.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.ts": "typescript"
+        }
+      }
+    ]
+  }
+}
