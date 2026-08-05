@@ -1,0 +1,3 @@
+import { Shape, area } from "./shape";
+
+export const a = area(Shape.Circle(2));
