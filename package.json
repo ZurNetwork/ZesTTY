@@ -5,7 +5,8 @@
   "description": "zts: a Rust-flavored superset of TypeScript. Compiler-level safety, ergonomic Rust patterns.",
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "editors/vscode"
   ],
   "scripts": {
     "build:native": "cargo build -p zestty-napi --release && cp target/release/libzestty_napi.so packages/zestty-native/zestty.linux-x64-gnu.node",
