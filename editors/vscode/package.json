@@ -1,7 +1,7 @@
 {
   "name": "zestty",
   "displayName": "ZesTTY",
-  "description": "Language support for ZesTTY (zts) — a Rust-flavored superset of TypeScript with compiler-enforced exhaustiveness.",
+  "description": "Language support for ZesTTY (zts) \u2014 a Rust-flavored superset of TypeScript with compiler-enforced exhaustiveness.",
   "version": "0.1.0",
   "publisher": "zurnetwork",
   "license": "MIT",
@@ -39,6 +39,23 @@
           "meta.embedded.ts": "typescript"
         }
       }
-    ]
+    ],
+    "configuration": {
+      "title": "ZesTTY",
+      "properties": {
+        "zestty.languageServer.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to @zestty/language-server server.js. Auto-detected from the workspace when empty."
+        }
+      }
+    }
+  },
+  "main": "./client.js",
+  "activationEvents": [
+    "onLanguage:zts"
+  ],
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   }
 }
