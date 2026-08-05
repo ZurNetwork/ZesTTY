@@ -276,6 +276,34 @@ fn enum_wrong_factory_arg_fails_tsc() {
 }
 
 #[test]
+fn result_from_core_composes_with_match() {
+    // The whole point: @zts/core's Result + expression-if + match, one
+    // file, verified by tsc end-to-end (feature #2's exit test).
+    let (ts_path, _) = compile_to("result_match.zts", "exit_result.ts");
+    let (ok, text) = tsc_with(
+        &ts_path,
+        &["--strict", "--module", "esnext", "--moduleResolution", "bundler"],
+    );
+    assert!(ok, "tsc rejected Result+match composition:\n{text}");
+
+    // Delete the Err arm: the keystone must fire for Results too.
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    let broken = code.replace(
+        "if (__k === \"Err\") {",
+        "if (false as boolean) { const __nope = __k;",
+    );
+    assert_ne!(code, broken, "fixture drifted; update the arm surgery");
+    let broken_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("exit_result_broken.ts");
+    std::fs::write(&broken_path, broken).unwrap();
+    let (ok, text) = tsc_with(
+        &broken_path,
+        &["--strict", "--module", "esnext", "--moduleResolution", "bundler"],
+    );
+    assert!(!ok, "keystone must reject a Result match missing its Err arm");
+    assert!(text.contains("TS2345"), "unexpected failure:\n{text}");
+}
+
+#[test]
 fn missing_arm_fails_tsc_and_maps_to_match() {
     let (ts_path, map_json) = compile_to("match_missing_arm.zts", "exit_missing.ts");
     let (ok, text) = tsc(&ts_path);

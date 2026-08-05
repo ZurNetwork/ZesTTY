@@ -68,7 +68,9 @@ Two sibling repos:
 - ✅ Phase 2: toolchain. npm workspace under `packages/` (`@zts/native`,
   `@zts/vite-plugin`, `@zts/svelte-preprocess`), all with node:test suites;
   `npm test` runs them, `npm run build:native` rebuilds the binding.
-- ⬜ Phase 3 (DX) and Phase 4 (remaining features).
+- ✅ Phase 4: all four locked features (match, enums-with-data,
+  expression if, `@zts/core` Result). See the checklist below.
+- ⬜ Phase 3 (DX: TextMate grammar, LSP proxy) — the remaining roadmap item.
 
 ---
 
@@ -245,9 +247,20 @@ arm body is a compile error until arms can lower to async IIFEs.
 - [ ] LSP proxy: run tsserver over generated TS, map diagnostics back through sourcemaps (Civet's approach)
 
 ### Phase 4 — Next features (each repeats the Phase 1 loop)
-- [ ] Enums-with-data (feature #3)
-- [ ] Expression `if` (feature #4)
-- [ ] `@zts/core` with `Result`, `map`, `map_err` (feature #2)
+- [x] Enums-with-data (feature #3): zts `enum` grammar in the fork
+  (`parse_any_enum_decl` dispatch; TS member syntax / `const enum` /
+  `declare enum` get friendly errors), lowered pre-resolver to a tagged
+  union type alias + typed factory const. `kind` is a reserved field name.
+- [x] Expression `if` (feature #4): mandatory `else`, else-if chains,
+  blocks-as-expressions (`{ stmts; tail }`). Statement-free chains lower
+  to ternaries (await stays legal); chains with statements lower to an
+  IIFE (await/yield rejected with a diagnostic). Match arm bodies accept
+  the block form too (`=> {` is a block, like arrow bodies — object
+  literals need parens).
+- [x] `@zts/core` with `Result`, `map`, `map_err` (feature #2): plus
+  `is_ok`/`is_err` guards and `unwrap`/`unwrap_or`, all on the `kind`
+  convention. Exit test proves Result + expression-if + match compose and
+  the keystone still fires when the `Err` arm is deleted.
 - [ ] Then and only then: revisit the deferred list
 
 **Discipline rule: nothing from Phase 4 ships before Phase 2 is green.**

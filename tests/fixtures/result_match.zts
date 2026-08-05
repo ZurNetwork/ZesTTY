@@ -1,0 +1,14 @@
+import { type Result, Ok, Err, map } from "@zts/core";
+
+function divide(a: number, b: number): Result<number, string> {
+  return if (b === 0) { Err("division by zero") } else { Ok(a / b) };
+}
+
+const doubled = map(divide(10, 2), (n) => n * 2);
+
+const msg = match (doubled) {
+  Ok { value } => `quotient: ${value}`,
+  Err { error } => `failed: ${error}`,
+};
+
+console.log(msg);

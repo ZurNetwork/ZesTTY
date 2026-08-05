@@ -1,0 +1,28 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/result_match.zts
+---
+import { type Result, Ok, Err, map } from "@zts/core";
+function __ztsAbsurd(x: never): never {
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
+}
+function divide(a: number, b: number): Result<number, string> {
+    return b === 0 ? Err("division by zero") : Ok(a / b);
+}
+const doubled = map(divide(10, 2), (n)=>n * 2);
+const msg = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Ok") {
+        const { value } = __m;
+        return `quotient: ${value}`;
+    }
+    if (__k === "Err") {
+        const { error } = __m;
+        return `failed: ${error}`;
+    }
+    return __ztsAbsurd(__k);
+})(doubled);
+console.log(msg);

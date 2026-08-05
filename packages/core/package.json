@@ -1,0 +1,14 @@
+{
+  "name": "@zts/core",
+  "version": "0.1.0",
+  "description": "zts runtime core: Result<T, E> with Ok/Err constructors and map/map_err combinators, using the zts `kind` discriminant convention.",
+  "type": "module",
+  "main": "index.ts",
+  "types": "index.ts",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "test": "node --test && ../../node_modules/.bin/tsc --noEmit --strict index.ts"
+  }
+}
