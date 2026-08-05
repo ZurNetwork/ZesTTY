@@ -1,0 +1,235 @@
+# zts
+
+A Rust-flavored **superset of TypeScript** that compiles to plain TypeScript.
+
+**The point is not Rust cosplay — it is safety, enforced at the compiler
+level.** Rust-like syntax is the vehicle; the goal is that entire classes of
+bugs (unhandled variants, unchecked errors) become *compile errors*, while
+Rust-style dev patterns (`match`, tagged enums, `Result`) stay ergonomic and
+cheap to use. Every feature must earn its place by making something unsafe
+inexpressible or loudly rejected — not by merely looking Rusty.
+
+Vanilla TS flows through untouched. New Rust-style constructs (`match`, enums-with-data, expression `if`, `Result`) are parsed, semantically checked, and **lowered to idiomatic TS** — then `tsc` verifies the output. We never reimplement TypeScript's type system; we generate code *for* it and weaponize its checker as our backend verifier.
+
+```
+zts  →  TS  →  JS
+```
+
+Each step erases a layer: zts sugar erases into TS syntax + types; TS types erase into JS. What survives to runtime is only what was always real data (tagged objects).
+
+---
+
+## Architecture
+
+Two sibling repos:
+
+```
+~/code/
+  swc_rustify/  ← fork of swc-project/swc (ProgrammingCheetah/swc_rustify).
+                 Stage 1 lives here: extended AST (swc_ecma_ast) + extended
+                 parser (swc_ecma_parser). zts changes go on a `zts` branch;
+                 `main` stays clean tracking upstream.
+  zts/          ← this repo. The compiler driver: semantic pass, lowering
+                 pass, emit, CLI. Path-depends on ../swc_rustify/crates/*.
+```
+
+### Pipeline
+
+```
+.zts file
+  → extended parser        (fork: knows match/enum/expr-if syntax)
+  → semantic pass          (zts: exhaustiveness setup, later: move checking)
+  → lowering pass          (zts: custom nodes → vanilla TS AST)
+  → emit                   (stock swc_ecma_codegen, unmodified — lowering
+                            happens BEFORE codegen, so codegen never sees
+                            custom nodes)
+  → plain .ts + sourcemap
+  → tsc/svelte-check       (their typechecker does the heavy lifting)
+```
+
+**Spans from the original `.zts` source are preserved through lowering.** They are the sourcemap story and the diagnostics story. Never synthesize spans when an original one exists.
+
+---
+
+## Current status
+
+- ✅ Milestone 0: identity compiler. `main.rs` parses a `.zts` file (vanilla TS
+  syntax) via the fork's parser and emits it back out via `swc_ecma_codegen`.
+  Round-trip confirmed.
+- ✅ Fork cloned (`../swc_rustify`), `main` tracking upstream.
+- ⬜ `zts` branch in the fork (create before the first fork edit).
+- ⬜ Everything below.
+
+---
+
+## Language features (locked scope — do not add others)
+
+### 1. `match` expressions
+
+Rust-style, **compiler-enforced exhaustiveness**.
+
+```ts
+// zts source
+const area = match (shape) {
+  Circle { radius } => PI * radius ** 2,
+  Square { side }   => side ** 2,
+};
+```
+
+Lowers to:
+
+```ts
+// generated TS
+const area = (() => {
+  const __m = shape;
+  if (__m.kind === "Circle") { const { radius } = __m; return PI * radius ** 2; }
+  if (__m.kind === "Square") { const { side } = __m; return side ** 2; }
+  return __ztsAbsurd(__m);
+})();
+```
+
+`__ztsAbsurd(x: never): never` is the keystone: if an arm is missing, `__m`
+does not narrow to `never` and **tsc rejects the generated code**. TypeScript's
+own checker proves exhaustiveness — zts just aims it. The reported error span
+must map back to the original `match` in the `.zts` file.
+
+Parser note: `match` is a **contextual keyword**. `str.match(re)` must keep
+working. On `match (expr) {`, checkpoint (`ParserCheckpoint`), attempt a
+match-expression parse, backtrack to a call expression on failure.
+
+### 2. `Result<T, E>` with `map` / `map_err`
+
+A **library feature**, not syntax. Ships as a tiny runtime package
+(`@zts/core`):
+
+```ts
+type Result<T, E> =
+  | { kind: "Ok";  value: T }
+  | { kind: "Err"; error: E };
+```
+
+Plus `Ok()`, `Err()` constructors and `map` / `map_err` combinators. Must use
+the same `kind` discriminant convention as everything else so it composes with
+`match`. Zero fork changes.
+
+### 3. Enums-with-data
+
+Rust-style enums, lowered to **tagged objects + factory functions**:
+
+```ts
+// zts source
+enum Shape {
+  Circle { radius: number },
+  Square { side: number },
+}
+```
+
+Lowers to a discriminated union type + constructors:
+
+```ts
+// generated TS
+type Shape =
+  | { kind: "Circle"; radius: number }
+  | { kind: "Square"; side: number };
+
+const Shape = {
+  Circle: (radius: number): Shape => ({ kind: "Circle", radius }),
+  Square: (side: number): Shape => ({ kind: "Square", side }),
+};
+```
+
+**Never emit TypeScript `enum`.** Not ever. Tagged unions only.
+
+Note: `enum` in zts source *shadows* TS's enum keyword — this is a deliberate
+semantic replacement, the one place zts is not a strict superset. TS `enum`
+syntax should be a hard error with a friendly diagnostic.
+
+### 4. Expression `if`
+
+Blocks are expressions; a block's value is its tail expression.
+
+```ts
+// zts source
+const a = if (b === 0) { 3 } else { 4 };
+```
+
+Lowering: simple branches → ternary; multi-statement branches → IIFE (same
+machinery as `match`). Applies to `if` and `match` arm bodies. `if` used as an
+expression without `else` is a compile error.
+
+### Deliberately deferred (do not implement yet)
+
+`Option<T>`, the `?` operator, `let`/`let mut`, traits (dictionary passing),
+newtypes, no-untracked-throws, move checking. These are on the horizon but
+**nothing gets built until Phase 2 below is green.**
+
+---
+
+## Conventions (locked decisions)
+
+- Discriminant field is **`kind`** (string literal). Everywhere. Non-negotiable.
+- Generated helper identifiers use the `__zts` prefix (`__m`, `__ztsAbsurd`).
+  Use SWC syntax contexts (hygiene) so generated names cannot collide with
+  user code.
+- New AST nodes are **never** handled in codegen. Codegen arms for custom
+  nodes are `unreachable!("must be lowered before emit")`. If codegen panics,
+  the lowering pass has a bug.
+- Fork discipline: all fork changes on the `zts` branch. When adding a node,
+  use the **donor-node technique**: pick a structurally similar existing node
+  (`CondExpr` for `MatchExpr`), `grep -rn '\bCondExpr\b'` across
+  `swc_ecma_ast`, `swc_ecma_visit`, `swc_ecma_codegen`, and mirror every
+  registration site. Compile errors are the checklist.
+- Snapshot tests (`insta` crate) from day one: `.zts` in → generated TS out.
+  Every feature lands with snapshots covering the happy path and the
+  should-fail-under-tsc path.
+
+---
+
+## Roadmap
+
+### Phase 1 — `match` vertical slice
+- [ ] AST: `MatchExpr { span, discriminant, arms }`, `MatchArm { span, variant, binding, body }`, `Expr::Match` variant (fork)
+- [ ] Regenerate/extend `swc_ecma_visit` for the new nodes (fork)
+- [ ] Parser: contextual `match`, checkpoint/backtrack, `str.match(re)` survives (fork)
+- [ ] Lowering pass: match → IIFE + if-chain + `__ztsAbsurd` (zts)
+- [ ] Emit via stock codegen, original spans preserved (zts)
+- [ ] CLI: `ztsc file.zts` → `file.ts` (+ `.ts.map`) (zts)
+- [ ] **Exit test:** delete an arm from a snapshot fixture, run tsc on the output, confirm the `never` error surfaces with a span pointing at the original `match`
+
+### Phase 2 — Toolchain
+- [ ] napi-rs binding
+- [ ] Vite plugin (`transform` hook filters `.zts`, returns `{ code, map }`)
+- [ ] Svelte preprocessor for `<script lang="zts">` (chained before `vitePreprocess`, exactly how `lang="ts"` works — no changes to `.svelte` structure)
+- [ ] Sourcemap proof: breakpoint set in `.zts` hits in browser devtools
+
+### Phase 3 — DX
+- [ ] TextMate grammar for syntax highlighting
+- [ ] LSP proxy: run tsserver over generated TS, map diagnostics back through sourcemaps (Civet's approach)
+
+### Phase 4 — Next features (each repeats the Phase 1 loop)
+- [ ] Enums-with-data (feature #3)
+- [ ] Expression `if` (feature #4)
+- [ ] `@zts/core` with `Result`, `map`, `map_err` (feature #2)
+- [ ] Then and only then: revisit the deferred list
+
+**Discipline rule: nothing from Phase 4 ships before Phase 2 is green.**
+Language projects die with five features parsed and zero usable in an editor.
+
+---
+
+## For Claude Code
+
+- You are extending a **working identity compiler**, not starting from
+  scratch. Run it first; keep the round-trip green at all times.
+- The fork at `../swc_rustify` is part of this project. Edits there are
+  expected and correct — but only on the `zts` branch (create it off `main`
+  if it doesn't exist yet), only mirroring existing patterns.
+- Do not add language features beyond the four above. Do not "improve" the
+  scope. Ergonomic polish within a feature is welcome; new features are not.
+- Do not reimplement any part of TypeScript's type checker. If a guarantee
+  can be obtained by shaping the generated TS so tsc enforces it, that is
+  always the right design.
+- Preserve original spans through every transformation. Sourcemaps and
+  diagnostics both depend on it.
+- Prior art for technique questions: Civet (superset → TS, LSP-over-sourcemaps),
+  Borgo (Rust-flavored syntax → simpler host language).
