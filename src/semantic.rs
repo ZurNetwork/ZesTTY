@@ -127,7 +127,10 @@ impl Checker<'_> {
                 self.check_binding(binding);
             }
 
-            let mut suspender = SuspenderCheck { checker: self };
+            let mut suspender = SuspenderCheck {
+                checker: self,
+                what: "a match arm",
+            };
             arm.body.visit_with(&mut suspender);
         }
     }
@@ -210,6 +213,21 @@ impl Visit for Checker<'_> {
         s.visit_children_with(self);
     }
 
+    fn visit_zts_if_expr(&mut self, i: &ZtsIfExpr) {
+        // Statement-free chains lower to ternaries, where await/yield stay
+        // legal. Chains with statements lower to a synchronous IIFE, so
+        // suspension anywhere in the chain (tests included — they evaluate
+        // inside the IIFE) must be rejected.
+        if crate::lower::if_chain_has_stmts(i) {
+            let mut suspender = SuspenderCheck {
+                checker: self,
+                what: "a multi-statement if-expression",
+            };
+            i.visit_with(&mut suspender);
+        }
+        i.visit_children_with(self);
+    }
+
     fn visit_zts_enum_decl(&mut self, e: &ZtsEnumDecl) {
         let mut seen: HashSet<&swc_atoms::Atom> = HashSet::with_capacity(e.variants.len());
         for variant in &e.variants {
@@ -251,11 +269,13 @@ impl Visit for Checker<'_> {
     }
 }
 
-/// Rejects `await` / `yield` directly inside a match arm body: arms lower
-/// into a synchronous IIFE, which would silently detach them from the
-/// enclosing async/generator function. Nested functions reset the check.
+/// Rejects `await` / `yield` directly inside constructs that lower into a
+/// synchronous IIFE (match arms, multi-statement if-expressions), which
+/// would silently detach them from the enclosing async/generator function.
+/// Nested functions reset the check.
 struct SuspenderCheck<'a, 'b> {
     checker: &'a mut Checker<'b>,
+    what: &'static str,
 }
 
 impl Visit for SuspenderCheck<'_, '_> {
@@ -279,18 +299,20 @@ impl Visit for SuspenderCheck<'_, '_> {
     }
 
     fn visit_await_expr(&mut self, e: &AwaitExpr) {
-        self.checker.err(
-            e.span,
-            "`await` inside a match arm is not supported yet (arms lower to a synchronous IIFE)",
+        let msg = format!(
+            "`await` inside {} is not supported yet (it lowers to a synchronous IIFE)",
+            self.what
         );
+        self.checker.err(e.span, &msg);
         e.visit_children_with(self);
     }
 
     fn visit_yield_expr(&mut self, e: &YieldExpr) {
-        self.checker.err(
-            e.span,
-            "`yield` inside a match arm is not supported yet (arms lower to a synchronous IIFE)",
+        let msg = format!(
+            "`yield` inside {} is not supported yet (it lowers to a synchronous IIFE)",
+            self.what
         );
+        self.checker.err(e.span, &msg);
         e.visit_children_with(self);
     }
 

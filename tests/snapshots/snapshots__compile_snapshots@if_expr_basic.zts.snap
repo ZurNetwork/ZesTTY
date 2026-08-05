@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/if_expr_basic.zts
+---
+declare const b: number;
+const a = b === 0 ? 3 : 4;
+const graded = b > 90 ? "A" : b > 80 ? "B" : "C";
+console.log(a, graded);

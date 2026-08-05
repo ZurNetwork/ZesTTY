@@ -189,6 +189,46 @@ fn arm_body_maps_to_original_span() {
 }
 
 #[test]
+fn if_expr_basic_passes_tsc() {
+    let (ts_path, _) = compile_to("if_expr_basic.zts", "exit_if_basic.ts");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains('?') && !code.contains("(()=>"),
+        "statement-free if-expressions must lower to ternaries:\n{code}"
+    );
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected ternary-lowered if-expression:\n{text}");
+}
+
+#[test]
+fn if_expr_multi_stmt_passes_tsc() {
+    let (ts_path, _) = compile_to("if_expr_multi_stmt.zts", "exit_if_multi.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected IIFE-lowered if-expression:\n{text}");
+}
+
+#[test]
+fn if_expr_await_in_simple_branch_passes_tsc() {
+    // Ternary lowering keeps await legal in statement-free branches.
+    let (ts_path, _) = compile_to("if_expr_await_simple.zts", "exit_if_await.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected await inside ternary-lowered if:\n{text}");
+}
+
+#[test]
+fn match_block_arm_bodies_pass_tsc() {
+    let (ts_path, _) = compile_to("match_block_arm_bodies.zts", "exit_arm_blocks.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected block-bodied match arms:\n{text}");
+    // Block arm bodies splice — no nested IIFE for the Circle arm.
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("const r2 = radius * radius;"),
+        "arm block statements must splice into the arm block:\n{code}"
+    );
+}
+
+#[test]
 fn enum_basic_passes_tsc() {
     let (ts_path, _) = compile_to("enum_basic.zts", "exit_enum_basic.ts");
     let (ok, text) = tsc(&ts_path);
@@ -206,9 +246,8 @@ fn enum_export_passes_tsc() {
     let (ok, text) = tsc(&ts_path);
     assert!(ok, "tsc rejected exported enum output:\n{text}");
     let code = std::fs::read_to_string(&ts_path).unwrap();
-    assert_eq!(
+    assert!(
         code.matches("export ").count() >= 4,
-        true,
         "both the type alias and the factory const must stay exported:\n{code}"
     );
 }

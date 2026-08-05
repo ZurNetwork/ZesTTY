@@ -1,0 +1,7 @@
+declare const b: number;
+
+const a = if (b === 0) { 3 } else { 4 };
+
+const graded = if (b > 90) { "A" } else if (b > 80) { "B" } else { "C" };
+
+console.log(a, graded);

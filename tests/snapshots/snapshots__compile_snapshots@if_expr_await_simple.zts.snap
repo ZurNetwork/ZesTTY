@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/if_expr_await_simple.zts
+---
+declare function f(): Promise<number>;
+async function go(flag: boolean): Promise<number> {
+    return flag ? await f() : 0;
+}
+void go(true);

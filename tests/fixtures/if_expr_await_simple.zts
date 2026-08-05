@@ -1,0 +1,7 @@
+declare function f(): Promise<number>;
+
+async function go(flag: boolean): Promise<number> {
+  return if (flag) { await f() } else { 0 };
+}
+
+void go(true);

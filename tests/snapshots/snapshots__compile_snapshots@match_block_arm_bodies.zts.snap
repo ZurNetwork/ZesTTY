@@ -1,0 +1,45 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/match_block_arm_bodies.zts
+---
+function __ztsAbsurd(x: never): never {
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
+}
+type Shape = {
+    kind: "Circle";
+    radius: number;
+} | {
+    kind: "Square";
+    side: number;
+};
+declare const shape: Shape;
+const area = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Circle") {
+        const { radius } = __m;
+        const r2 = radius * radius;
+        return 3.14159 * r2;
+    }
+    if (__k === "Square") {
+        const { side } = __m;
+        return side ** 2;
+    }
+    return __ztsAbsurd(__k);
+})(shape);
+const label = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Circle") {
+        const { radius } = __m;
+        return radius > 10 ? "big circle" : "small circle";
+    }
+    if (__k === "Square") {
+        const { side } = __m;
+        const desc = side > 10 ? "big" : "small";
+        return `${desc} square`;
+    }
+    return __ztsAbsurd(__k);
+})(shape);
+console.log(area, label);

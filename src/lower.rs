@@ -214,11 +214,25 @@ impl Lower {
             );
         }
 
-        let body_span = body.span();
-        cons_stmts.push(Stmt::Return(ReturnStmt {
-            span: body_span,
-            arg: Some(body),
-        }));
+        match *body {
+            // Block-bodied arm: splice the statements straight into the
+            // arm's `if` block — no extra IIFE needed.
+            Expr::ZtsExprBlock(block) => {
+                cons_stmts.extend(block.stmts);
+                let tail_span = block.tail.span();
+                cons_stmts.push(Stmt::Return(ReturnStmt {
+                    span: tail_span,
+                    arg: Some(block.tail),
+                }));
+            }
+            body => {
+                let body_span = body.span();
+                cons_stmts.push(Stmt::Return(ReturnStmt {
+                    span: body_span,
+                    arg: Some(Box::new(body)),
+                }));
+            }
+        }
 
         Stmt::If(IfStmt {
             span,
@@ -375,16 +389,123 @@ fn script_insert_index(stmts: &[Stmt]) -> usize {
     idx
 }
 
+/// Does any block in this if-expression chain carry statements? Statement-
+/// free chains lower to ternaries; anything else needs the IIFE.
+pub(crate) fn if_chain_has_stmts(i: &ZtsIfExpr) -> bool {
+    if !i.cons.stmts.is_empty() {
+        return true;
+    }
+    match &i.alt {
+        ZtsIfAlt::Block(b) => !b.stmts.is_empty(),
+        ZtsIfAlt::If(next) => if_chain_has_stmts(next),
+    }
+}
+
+/// `test ? consTail : (…)` — for statement-free chains.
+fn build_ternary(i: ZtsIfExpr) -> Expr {
+    let alt = match i.alt {
+        ZtsIfAlt::Block(b) => b.tail,
+        ZtsIfAlt::If(next) => Box::new(build_ternary(*next)),
+    };
+    Expr::Cond(CondExpr {
+        span: i.span,
+        test: i.test,
+        cons: i.cons.tail,
+        alt,
+    })
+}
+
+/// `{ …stmts; return tail; }`
+fn block_with_return(b: ZtsExprBlock) -> BlockStmt {
+    let mut stmts = b.stmts;
+    let tail_span = b.tail.span();
+    stmts.push(Stmt::Return(ReturnStmt {
+        span: tail_span,
+        arg: Some(b.tail),
+    }));
+    BlockStmt {
+        span: b.span,
+        ctxt: SyntaxContext::empty(),
+        stmts,
+    }
+}
+
+/// `(() => { if (t1) { …; return v1 } …; …else stmts; return elseTail; })()`
+fn build_if_iife(i: ZtsIfExpr) -> Expr {
+    let span = i.span;
+    let mut stmts: Vec<Stmt> = Vec::new();
+
+    let mut link = i;
+    loop {
+        stmts.push(Stmt::If(IfStmt {
+            span: link.cons.span,
+            test: link.test,
+            cons: Box::new(Stmt::Block(block_with_return(link.cons))),
+            alt: None,
+        }));
+        match link.alt {
+            ZtsIfAlt::If(next) => link = *next,
+            ZtsIfAlt::Block(b) => {
+                let else_block = block_with_return(b);
+                stmts.extend(else_block.stmts);
+                break;
+            }
+        }
+    }
+
+    let arrow = ArrowExpr {
+        span,
+        ctxt: SyntaxContext::empty(),
+        params: Vec::new(),
+        body: Box::new(BlockStmtOrExpr::BlockStmt(BlockStmt {
+            span,
+            ctxt: SyntaxContext::empty(),
+            stmts,
+        })),
+        is_async: false,
+        is_generator: false,
+        type_params: None,
+        return_type: None,
+    };
+
+    Expr::Call(CallExpr {
+        span,
+        ctxt: SyntaxContext::empty(),
+        callee: Callee::Expr(Box::new(Expr::Paren(ParenExpr {
+            span,
+            expr: Box::new(Expr::Arrow(arrow)),
+        }))),
+        args: Vec::new(),
+        type_args: None,
+    })
+}
+
 impl VisitMut for Lower {
     fn visit_mut_expr(&mut self, e: &mut Expr) {
-        // Children first: nested matches lower bottom-up.
+        // Children first: nested constructs lower bottom-up. Note that
+        // else-if links and arm-body blocks are NOT `Expr` children — the
+        // whole chain is consumed at once below, after its tests, tails,
+        // and statements have been visited.
         e.visit_mut_children_with(self);
 
-        if e.is_match_expr() {
-            let Expr::Match(m) = e.take() else {
-                unreachable!()
-            };
-            *e = self.lower_match(m);
+        match e {
+            Expr::Match(..) => {
+                let Expr::Match(m) = e.take() else {
+                    unreachable!()
+                };
+                *e = self.lower_match(m);
+            }
+            Expr::ZtsIf(..) => {
+                let Expr::ZtsIf(i) = e.take() else {
+                    unreachable!()
+                };
+                *e = if if_chain_has_stmts(&i) {
+                    build_if_iife(i)
+                } else {
+                    build_ternary(i)
+                };
+            }
+            _ => {}
         }
     }
 

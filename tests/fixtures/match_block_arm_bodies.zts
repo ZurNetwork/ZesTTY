@@ -1,0 +1,23 @@
+type Shape =
+  | { kind: "Circle"; radius: number }
+  | { kind: "Square"; side: number };
+
+declare const shape: Shape;
+
+const area = match (shape) {
+  Circle { radius } => {
+    const r2 = radius * radius;
+    3.14159 * r2
+  },
+  Square { side } => side ** 2,
+};
+
+const label = match (shape) {
+  Circle { radius } => if (radius > 10) { "big circle" } else { "small circle" },
+  Square { side } => {
+    const desc = if (side > 10) { "big" } else { "small" };
+    `${desc} square`
+  },
+};
+
+console.log(area, label);

@@ -1,0 +1,12 @@
+declare function f(): Promise<number>;
+
+async function go(flag: boolean): Promise<number> {
+  return if (flag) {
+    const x = 1;
+    await f() + x
+  } else {
+    0
+  };
+}
+
+void go(true);
