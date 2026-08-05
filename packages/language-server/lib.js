@@ -20,6 +20,11 @@ export class ZtsProject {
     this.rootDir = rootDir;
     /** @type {Map<string, {text: string, version: number, twin: string|null, twinVersion: number, consumer: any, error: string|null}>} */
     this.docs = new Map();
+    /** twin path -> original .zts path (reverse index; twin names are
+     * in-place `foo.ts`, IDENTICAL to zts-check's, so the two tools agree
+     * and extensionless imports resolve — virtual twins shadow any
+     * committed/stale on-disk file of the same name). */
+    this.twinToDoc = new Map();
 
     const configPath = ts.findConfigFile(rootDir, ts.sys.fileExists);
     let options = {
@@ -29,6 +34,10 @@ export class ZtsProject {
       moduleResolution: ts.ModuleResolutionKind.Bundler,
       noEmit: true,
     };
+    /** Files from the project tsconfig (ambient .d.ts, app.d.ts, …) —
+     * without them, `declare global` and env types are invisible and the
+     * LSP reports false "Cannot find name" errors. */
+    this.projectFiles = [];
     if (configPath) {
       const parsed = ts.parseJsonConfigFileContent(
         ts.readConfigFile(configPath, ts.sys.readFile).config,
@@ -36,19 +45,29 @@ export class ZtsProject {
         dirname(configPath),
       );
       options = { ...parsed.options, noEmit: true };
+      this.projectFiles = parsed.fileNames;
     }
     this.options = options;
 
     const project = this;
+    const docFor = (file) => {
+      const original = project.twinToDoc.get(file);
+      return original != null ? project.docs.get(original) : undefined;
+    };
     this.service = ts.createLanguageService({
-      getScriptFileNames: () => [...project.docs.keys()].map(twinName),
+      getScriptFileNames: () => [
+        ...new Set([
+          ...project.projectFiles,
+          ...[...project.docs.keys()].map(twinName),
+        ]),
+      ],
       getScriptVersion: (file) => {
-        const doc = project.docs.get(originalName(file));
+        const doc = docFor(file);
         if (doc) return String(doc.twinVersion);
-        return String(statVersion(file));
+        return String(ts.sys.getModifiedTime?.(file)?.getTime() ?? 0);
       },
       getScriptSnapshot: (file) => {
-        const doc = project.docs.get(originalName(file));
+        const doc = docFor(file);
         if (doc) {
           return doc.twin != null
             ? ts.ScriptSnapshot.fromString(doc.twin)
@@ -63,9 +82,9 @@ export class ZtsProject {
       getCompilationSettings: () => project.options,
       getDefaultLibFileName: (o) => ts.getDefaultLibFilePath(o),
       fileExists: (file) =>
-        project.docs.has(originalName(file)) || ts.sys.fileExists(file),
+        project.twinToDoc.has(file) || ts.sys.fileExists(file),
       readFile: (file) => {
-        const doc = project.docs.get(originalName(file));
+        const doc = docFor(file);
         return doc?.twin ?? ts.sys.readFile(file);
       },
       readDirectory: ts.sys.readDirectory,
@@ -81,23 +100,30 @@ export class ZtsProject {
       text,
       version,
       twin: prev?.twin ?? null,
-      twinVersion: (prev?.twinVersion ?? 0) + 1,
-      consumer: null,
+      twinVersion: prev?.twinVersion ?? 1,
+      consumer: prev?.consumer ?? null,
       error: null,
     };
     try {
       const out = compile(text, path, { tsx: path.endsWith(".ztsx") });
-      doc.twin = out.code;
+      if (out.code !== doc.twin) {
+        doc.twin = out.code;
+        doc.twinVersion += 1;
+      }
       doc.consumer = new SourceMapConsumer(JSON.parse(out.map));
     } catch (err) {
       doc.error = String(err.message);
-      // Keep the previous twin (if any) so hover etc. degrade gracefully.
+      // Keep the previous twin AND its matching consumer together, so
+      // hover/defs degrade to last-good coherently instead of mixing a
+      // stale twin with no mapper.
     }
     this.docs.set(path, doc);
+    this.twinToDoc.set(twinName(path), path);
     return doc;
   }
 
   close(path) {
+    this.twinToDoc.delete(twinName(path));
     this.docs.delete(path);
   }
 
@@ -105,11 +131,15 @@ export class ZtsProject {
   toTwinOffset(path, position) {
     const doc = this.docs.get(path);
     if (!doc?.consumer || doc.twin == null) return null;
+    if (position.line < 0 || position.character < 0) return null;
+    // GREATEST_LOWER_BOUND: with statement-granular maps, snapping FORWARD
+    // (LUB) answers hover with a confidently wrong neighboring symbol;
+    // GLB degrades to null instead. No hover beats a lying hover.
     const gen = doc.consumer.generatedPositionFor({
       source: path,
       line: position.line + 1,
       column: position.character,
-      bias: SourceMapConsumer.LEAST_UPPER_BOUND,
+      bias: SourceMapConsumer.GREATEST_LOWER_BOUND,
     });
     if (gen.line == null) return null;
     const lines = doc.twin.split("\n");
@@ -205,7 +235,7 @@ export class ZtsProject {
       this.service.getDefinitionAtPosition(twinName(path), offset) ?? [];
     const out = [];
     for (const def of defs) {
-      const original = originalName(def.fileName);
+      const original = this.twinToDoc.get(def.fileName) ?? def.fileName;
       if (this.docs.has(original)) {
         const range = this.toOriginalRange(
           original,
@@ -233,25 +263,14 @@ export class ZtsProject {
   }
 }
 
-/** foo.zts → foo.zts.ts (virtual twin name; never collides with real files). */
+/**
+ * foo.zts → foo.ts, foo.ztsx → foo.tsx — the SAME in-place naming
+ * zts-check uses, so extensionless imports resolve identically in both
+ * tools and the virtual twin shadows any committed (possibly stale)
+ * on-disk twin. Reverse lookups go through ZtsProject.twinToDoc.
+ */
 export function twinName(path) {
-  return /\.ztsx?$/.test(path) ? `${path}.ts` : path;
-}
-
-function originalName(file) {
-  return file.replace(/\.zts(x?)\.ts$/, ".zts$1");
-}
-
-const statVersions = new Map();
-function statVersion(file) {
-  // Good enough for on-disk files that rarely change mid-session.
-  try {
-    const mtime = ts.sys.getModifiedTime?.(file)?.getTime() ?? 0;
-    statVersions.set(file, mtime);
-    return mtime;
-  } catch {
-    return 0;
-  }
+  return path.replace(/\.zts(x?)$/, ".ts$1");
 }
 
 function offsetToLineCol(text, offset) {

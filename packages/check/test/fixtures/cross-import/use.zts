@@ -1,0 +1,6 @@
+import { Kind } from "./dep";
+
+export const v = match (Kind.A(1)) {
+  A { n } => n,
+  B { s } => s.length,
+};

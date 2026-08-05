@@ -1,0 +1,4 @@
+export enum Kind {
+  A { n: number },
+  B { s: string },
+}
