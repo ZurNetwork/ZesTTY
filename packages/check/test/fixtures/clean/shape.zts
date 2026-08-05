@@ -1,0 +1,11 @@
+export enum Shape {
+  Circle { radius: number },
+  Square { side: number },
+}
+
+export function area(s: Shape): number {
+  return match (s) {
+    Circle { radius } => 3.14 * radius ** 2,
+    Square { side } => side ** 2,
+  };
+}
