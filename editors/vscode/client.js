@@ -12,12 +12,21 @@ function resolveServer(context) {
   const configured = workspace
     .getConfiguration("zestty")
     .get("languageServer.path");
-  if (configured) return configured;
+  if (configured) {
+    if (fs.existsSync(configured)) return configured;
+    console.warn(
+      `zestty: configured languageServer.path not found: ${configured}`,
+    );
+  }
 
   const candidates = [];
   const root = workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (root) {
-    // Consumer projects with @zestty/language-server installed.
+    // Consumer projects with @zestty/language-server installed. (The bare
+    // repo-layout candidate was deliberately dropped: executing a path a
+    // workspace merely CONTAINS — no install step — is a wider surface
+    // than the norm; repo devs use the setting or the extension-relative
+    // path below.)
     candidates.push(
       path.join(
         root,
@@ -26,10 +35,6 @@ function resolveServer(context) {
         "language-server",
         "server.js",
       ),
-    );
-    // The ZesTTY repo itself.
-    candidates.push(
-      path.join(root, "packages", "language-server", "server.js"),
     );
   }
   // Relative to the extension (repo-dev install from editors/vscode).

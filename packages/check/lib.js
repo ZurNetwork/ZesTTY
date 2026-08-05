@@ -2,8 +2,10 @@ import { compile } from "@zestty/native";
 import { SourceMapConsumer } from "source-map-js";
 import { execFileSync } from "node:child_process";
 import {
+  mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
   unlinkSync,
   existsSync,
@@ -40,14 +42,17 @@ export function scan(root) {
 }
 
 const SVELTE_ZTS_SCRIPT =
-  /<script([^>]*\blang\s*=\s*["']zts["'][^>]*)>([\s\S]*?)<\/script>/;
+  /<script([^>]*\blang\s*=\s*["']zts["'][^>]*)>([\s\S]*?)<\/script>/g;
 
 /**
  * Strip a trailing sourceMappingURL comment: committed twins carry one,
  * fresh compiles don't, and staleness comparison must not care.
  */
 function stripMapComment(code) {
-  return code.replace(/\n?\/\/# sourceMappingURL=\S*\s*$/, "").trimEnd();
+  return code
+    .replace(/\r\n/g, "\n") // CRLF checkouts must not look stale
+    .replace(/\n?\/\/# sourceMappingURL=\S*\s*$/, "")
+    .trimEnd();
 }
 
 /**
@@ -104,39 +109,44 @@ export function materialize(root) {
 
   for (const file of svelte) {
     const source = readFileSync(file, "utf8");
-    const m = SVELTE_ZTS_SCRIPT.exec(source);
-    if (!m) continue;
-    const scriptContent = m[2];
-    // Line offset of the script *content* inside the component file.
-    const scriptOffset = source
-      .slice(0, m.index + m[0].indexOf(">") + 1)
-      .split("\n").length;
-    let compiled;
-    try {
-      compiled = compile(scriptContent, file, { tsx: false });
-    } catch (err) {
-      errors.push({ file, message: String(err.message).trimEnd() });
-      continue;
-    }
-    const twinPath = join(
-      dirname(file),
-      `${basename(file, ".svelte")}.svelte-script.ts`,
-    );
-    if (existsSync(twinPath)) {
-      errors.push({
-        file: twinPath,
-        message: `refusing to overwrite existing file for the svelte script twin of ${relative(root, file)}`,
+    // ALL lang="zts" blocks (instance + context="module"), not just the first.
+    let index = 0;
+    for (const m of source.matchAll(SVELTE_ZTS_SCRIPT)) {
+      const scriptContent = m[2];
+      // Line offset of the script *content* inside the component file.
+      const scriptOffset = source
+        .slice(0, m.index + m[0].indexOf(">") + 1)
+        .split("\n").length;
+      let compiled;
+      try {
+        compiled = compile(scriptContent, file, { tsx: false });
+      } catch (err) {
+        errors.push({ file, message: String(err.message).trimEnd() });
+        index += 1;
+        continue;
+      }
+      const suffix = index === 0 ? "" : String(index);
+      const twinPath = join(
+        dirname(file),
+        `${basename(file, ".svelte")}.svelte-script${suffix}.ts`,
+      );
+      index += 1;
+      if (existsSync(twinPath)) {
+        errors.push({
+          file: twinPath,
+          message: `refusing to overwrite existing file for the svelte script twin of ${relative(root, file)}`,
+        });
+        continue;
+      }
+      writeFileSync(twinPath, compiled.code);
+      twins.push({
+        twinPath,
+        mapJson: compiled.map,
+        originalPath: file,
+        created: true,
+        scriptOffset: scriptOffset - 1,
       });
-      continue;
     }
-    writeFileSync(twinPath, compiled.code);
-    twins.push({
-      twinPath,
-      mapJson: compiled.map,
-      originalPath: file,
-      created: true,
-      scriptOffset: scriptOffset - 1,
-    });
   }
 
   return { twins, errors };
@@ -173,8 +183,10 @@ const TSC_DIAG = /^(.+?)\((\d+),(\d+)\): (error TS\d+: [\s\S]*)$/;
  */
 export function runCheck(root, twins) {
   const tsc = findTsc(root);
+  // --listFiles: every twin MUST appear in tsc's program, or a .zts outside
+  // the tsconfig's include silently escapes the gate (false-green CI).
   const args = existsSync(join(root, "tsconfig.json"))
-    ? ["-p", root, "--noEmit", "--pretty", "false"]
+    ? ["-p", root, "--noEmit", "--pretty", "false", "--listFiles"]
     : [
         "--noEmit",
         "--strict",
@@ -184,8 +196,11 @@ export function runCheck(root, twins) {
         "esnext",
         "--moduleResolution",
         "bundler",
+        "--jsx",
+        "preserve",
         "--pretty",
         "false",
+        "--listFiles",
         ...twins.map((t) => t.twinPath),
       ];
 
@@ -202,28 +217,47 @@ export function runCheck(root, twins) {
   }
 
   const byTwin = new Map(twins.map((t) => [resolve(root, t.twinPath), t]));
+  const consumers = new Map(); // twinPath -> SourceMapConsumer (built once)
+  const consumerFor = (twin) => {
+    let c = consumers.get(twin.twinPath);
+    if (!c) {
+      c = new SourceMapConsumer(JSON.parse(twin.mapJson));
+      consumers.set(twin.twinPath, c);
+    }
+    return c;
+  };
 
+  const seenInProgram = new Set();
   const diagnostics = [];
   for (const line of stdout.split("\n")) {
-    const m = TSC_DIAG.exec(line.trimEnd());
+    const trimmed = line.trimEnd();
+    // --listFiles lines are bare absolute paths; consume them silently.
+    const asPath = resolve(root, trimmed);
+    if (byTwin.has(asPath) && !TSC_DIAG.test(trimmed)) {
+      seenInProgram.add(asPath);
+      continue;
+    }
+    if (/^\//.test(trimmed) && !TSC_DIAG.test(trimmed) && existsSync(trimmed)) {
+      continue; // some other program file listing
+    }
+    const m = TSC_DIAG.exec(trimmed);
     if (!m) {
-      if (line.trim()) diagnostics.push({ raw: line.trimEnd() });
+      if (trimmed.trim()) diagnostics.push({ raw: trimmed });
       continue;
     }
     const [, file, lineNo, colNo, message] = m;
     const abs = resolve(root, file);
     const twin = byTwin.get(abs);
     if (!twin) {
-      diagnostics.push({ raw: line.trimEnd() });
+      diagnostics.push({ raw: trimmed });
       continue;
     }
-    const consumer = new SourceMapConsumer(JSON.parse(twin.mapJson));
-    const orig = consumer.originalPositionFor({
+    const orig = consumerFor(twin).originalPositionFor({
       line: Number(lineNo),
       column: Number(colNo) - 1,
     });
     if (orig.line == null) {
-      diagnostics.push({ raw: line.trimEnd() });
+      diagnostics.push({ raw: trimmed });
       continue;
     }
     diagnostics.push({
@@ -232,6 +266,18 @@ export function runCheck(root, twins) {
       column: orig.column + 1,
       message,
     });
+  }
+
+  // C1: a twin tsc never loaded means its .zts escaped the gate entirely.
+  for (const t of twins) {
+    if (!seenInProgram.has(resolve(root, t.twinPath))) {
+      diagnostics.push({
+        file: t.originalPath,
+        line: 1,
+        column: 1,
+        message: `error TS0: not covered by the project tsconfig (its twin ${relative(root, t.twinPath)} is outside include/files) — widen the tsconfig so this file is actually checked`,
+      });
+    }
   }
 
   return { failed, diagnostics };
@@ -249,16 +295,79 @@ export function cleanup(twins) {
   }
 }
 
+const MANIFEST_DIR = ".zts-check";
+const MANIFEST = "created.json";
+
+/**
+ * A manifest left behind means a previous run died before cleanup (SIGKILL,
+ * OOM). Its entries are twins WE created — delete them instead of adopting
+ * byte-identical leftovers as committed twins (which would later surface as
+ * bogus "stale committed twin" errors the user never created).
+ */
+function recoverLeaks(root, log) {
+  const manifestPath = join(root, MANIFEST_DIR, MANIFEST);
+  if (!existsSync(manifestPath)) return;
+  try {
+    const created = JSON.parse(readFileSync(manifestPath, "utf8"));
+    for (const twin of created) {
+      if (existsSync(twin)) {
+        unlinkSync(twin);
+        log(
+          `zts-check: removed twin leaked by an interrupted run: ${relative(root, twin)}`,
+        );
+      }
+    }
+  } finally {
+    rmSync(join(root, MANIFEST_DIR), { recursive: true, force: true });
+  }
+}
+
+function writeManifest(root, twins) {
+  const created = twins.filter((t) => t.created).map((t) => t.twinPath);
+  if (created.length === 0) return;
+  mkdirSync(join(root, MANIFEST_DIR), { recursive: true });
+  writeFileSync(join(root, MANIFEST_DIR, MANIFEST), JSON.stringify(created));
+}
+
+function removeManifest(root) {
+  rmSync(join(root, MANIFEST_DIR), { recursive: true, force: true });
+}
+
 /** Full run. Returns an exit code. */
 export function ztsCheck(root, { keep = false, log = console.error } = {}) {
   root = resolve(root);
-  const { twins, errors } = materialize(root);
+  if (!existsSync(root)) {
+    log(`zts-check: no such directory: ${root}`);
+    return 2;
+  }
 
+  recoverLeaks(root, log);
+
+  let twins = [];
   let errorCount = 0;
+
+  // Ctrl-C / CI cancellation must not leave twins in the tree.
+  const onSignal = (signal) => {
+    cleanup(twins);
+    removeManifest(root);
+    process.exit(signal === "SIGINT" ? 130 : 143);
+  };
+  const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
+  for (const sig of SIGNALS) process.on(sig, onSignal);
+
   try {
-    for (const e of errors) {
+    const materialized = materialize(root);
+    twins = materialized.twins;
+    writeManifest(root, twins);
+
+    for (const e of materialized.errors) {
       errorCount += 1;
       log(`${relative(root, e.file)}: ${e.message}`);
+    }
+
+    if (twins.length === 0) {
+      if (errorCount === 0) log("zts-check: nothing to check");
+      return errorCount === 0 ? 0 : 1;
     }
 
     const { failed, diagnostics } = runCheck(root, twins);
@@ -277,7 +386,11 @@ export function ztsCheck(root, { keep = false, log = console.error } = {}) {
       log("zts-check: tsc exited non-zero without diagnostics");
     }
   } finally {
-    if (!keep) cleanup(twins);
+    for (const sig of SIGNALS) process.off(sig, onSignal);
+    if (!keep) {
+      cleanup(twins);
+      removeManifest(root);
+    }
   }
 
   if (errorCount === 0) {

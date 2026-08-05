@@ -3,29 +3,45 @@
   "name": "ZesTTY",
   "scopeName": "source.zts",
   "patterns": [
-    { "include": "#zts-match-expression" },
-    { "include": "#zts-enum-declaration" },
-    { "include": "source.ts" }
+    {
+      "include": "#zts-match-expression"
+    },
+    {
+      "include": "#zts-enum-declaration"
+    },
+    {
+      "include": "source.ts"
+    }
   ],
   "repository": {
     "zts-match-expression": {
-      "comment": "`match (expr) {` — contextual keyword; `.match(` stays a method call",
+      "comment": "`match (expr) {` \u2014 contextual keyword; `.match(` stays a method call",
       "match": "(?<![.$])\\b(match)\\b(?=\\s*\\()",
       "captures": {
-        "1": { "name": "keyword.control.match.zts" }
+        "1": {
+          "name": "keyword.control.match.zts"
+        }
       }
     },
     "zts-enum-declaration": {
       "comment": "zts enum with data-carrying variants: enum Name { Variant { field: Type } }",
       "begin": "(?<![.$])\\b(enum)\\s+([A-Za-z_$][\\w$]*)\\s*(\\{)",
       "beginCaptures": {
-        "1": { "name": "storage.type.enum.zts" },
-        "2": { "name": "entity.name.type.enum.zts" },
-        "3": { "name": "punctuation.definition.block.zts" }
+        "1": {
+          "name": "storage.type.enum.zts"
+        },
+        "2": {
+          "name": "entity.name.type.enum.zts"
+        },
+        "3": {
+          "name": "punctuation.definition.block.zts"
+        }
       },
       "end": "\\}",
       "endCaptures": {
-        "0": { "name": "punctuation.definition.block.zts" }
+        "0": {
+          "name": "punctuation.definition.block.zts"
+        }
       },
       "patterns": [
         {
@@ -39,17 +55,42 @@
           "end": "\\}",
           "patterns": [
             {
+              "include": "#zts-balanced-braces"
+            },
+            {
               "match": "\\b([A-Za-z_$][\\w$]*)\\s*(:)",
               "captures": {
-                "1": { "name": "variable.object.property.zts" },
-                "2": { "name": "punctuation.separator.key-value.zts" }
+                "1": {
+                  "name": "variable.object.property.zts"
+                },
+                "2": {
+                  "name": "punctuation.separator.key-value.zts"
+                }
               }
             },
-            { "include": "source.ts#type" },
-            { "include": "source.ts" }
+            {
+              "include": "source.ts#type"
+            },
+            {
+              "include": "source.ts"
+            }
           ]
         },
-        { "include": "source.ts" }
+        {
+          "include": "source.ts"
+        }
+      ]
+    },
+    "zts-balanced-braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [
+        {
+          "include": "#zts-balanced-braces"
+        },
+        {
+          "include": "source.ts"
+        }
       ]
     }
   }

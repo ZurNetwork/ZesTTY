@@ -46,7 +46,8 @@
         "zestty.languageServer.path": {
           "type": "string",
           "default": "",
-          "description": "Path to @zestty/language-server server.js. Auto-detected from the workspace when empty."
+          "description": "Path to @zestty/language-server server.js. Auto-detected from the workspace when empty.",
+          "scope": "machine-overridable"
         }
       }
     }
@@ -57,5 +58,11 @@
   ],
   "dependencies": {
     "vscode-languageclient": "^9.0.1"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "ZesTTY runs a workspace-provided language server (like typescript.tsdk); it stays disabled in Restricted Mode."
+    }
   }
 }
