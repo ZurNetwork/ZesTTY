@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_globalthis_shadow.zts
+---
+error: declaring a binding named `globalThis` is not supported in a module that uses `match` (the generated exhaustiveness helper references `globalThis.Error`)
+ --> tests/fixtures/errors/err_globalthis_shadow.zts:4:7
+  |
+4 | const globalThis = { Error: class { constructor(public m: string) {} } };
+  |       ^^^^^^^^^^

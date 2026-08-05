@@ -41,6 +41,12 @@
 //! value rides on a `ztsTag` property — deliberately NOT `kind`, so the
 //! thrown object can never impersonate a domain tagged union in a `catch`.
 //!
+//! Accepted limitation (review-gated, minor): a module-scope
+//! `const globalThis = { Error: ... }` shadow makes the helper throw the
+//! user's class instead of a real Error. "Real Error" and "shadow-proof
+//! against every global" are fundamentally in tension; module code that
+//! shadows `globalThis` itself is far outside anything we defend against.
+//!
 //! Original spans are preserved on every node that has a source
 //! counterpart; only glue (the IIFE scaffolding identifiers) is synthetic.
 //! Generated identifiers get a fresh `Mark`, and the `hygiene()` pass that

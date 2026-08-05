@@ -7,8 +7,7 @@
 
 use std::collections::HashSet;
 
-use anyhow::{Result, bail};
-use swc_common::{Spanned, errors::Handler};
+use swc_common::{Span, Spanned, errors::Handler};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -18,16 +17,55 @@ use swc_ecma_visit::{Visit, VisitWith};
 /// real diagnostic instead.
 const MAX_EXPR_DEPTH: usize = 2048;
 
-pub fn check(module: &Module, handler: &Handler) -> Result<()> {
+/// Semantic checking failed; diagnostics were emitted via the handler.
+#[derive(Debug)]
+pub struct SemanticFailure {
+    pub errors: usize,
+    /// The expression-nesting limit fired. The caller should `mem::forget`
+    /// the module instead of dropping it: `Drop for Expr` recurses and is
+    /// not stack-protected, so dropping an over-deep AST can SIGABRT
+    /// *after* the diagnostic was printed.
+    pub depth_exceeded: bool,
+}
+
+impl std::fmt::Display for SemanticFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} semantic error(s)", self.errors)
+    }
+}
+
+impl std::error::Error for SemanticFailure {}
+
+pub fn check(module: &Module, handler: &Handler) -> Result<(), SemanticFailure> {
     let mut checker = Checker {
         handler,
         errors: 0,
         expr_depth: 0,
         depth_reported: false,
+        has_match: false,
+        global_this_decls: Vec::new(),
     };
     module.visit_with(&mut checker);
+
+    // A module-scope binding named `globalThis` would capture the injected
+    // helper's `globalThis.Error` reference — lexical scoping leaves no way
+    // to make that reference shadow-proof, so reject the (pathological)
+    // combination outright with a span the author can act on.
+    if checker.has_match && !checker.global_this_decls.is_empty() {
+        for span in std::mem::take(&mut checker.global_this_decls) {
+            checker.err(
+                span,
+                "declaring a binding named `globalThis` is not supported in a module that uses \
+                 `match` (the generated exhaustiveness helper references `globalThis.Error`)",
+            );
+        }
+    }
+
     if checker.errors > 0 {
-        bail!("{} semantic error(s)", checker.errors);
+        return Err(SemanticFailure {
+            errors: checker.errors,
+            depth_exceeded: checker.depth_reported,
+        });
     }
     Ok(())
 }
@@ -37,12 +75,36 @@ struct Checker<'a> {
     errors: usize,
     expr_depth: usize,
     depth_reported: bool,
+    has_match: bool,
+    global_this_decls: Vec<Span>,
 }
 
 impl Checker<'_> {
-    fn err(&mut self, span: swc_common::Span, msg: &str) {
+    fn err(&mut self, span: Span, msg: &str) {
         self.handler.struct_span_err(span, msg).emit();
         self.errors += 1;
+    }
+
+    fn note_global_this_shadow(&mut self, ident: &Ident) {
+        if ident.sym == "globalThis" {
+            self.global_this_decls.push(ident.span);
+        }
+    }
+
+    fn guard_depth(&mut self, e: &Expr, descend: impl FnOnce(&mut Self)) {
+        self.expr_depth += 1;
+        if self.expr_depth > MAX_EXPR_DEPTH {
+            if !self.depth_reported {
+                self.depth_reported = true;
+                self.err(
+                    e.span(),
+                    &format!("expression nesting exceeds the zts limit of {MAX_EXPR_DEPTH}"),
+                );
+            }
+        } else {
+            descend(self);
+        }
+        self.expr_depth -= 1;
     }
 
     fn check_match(&mut self, m: &MatchExpr) {
@@ -109,24 +171,43 @@ impl Checker<'_> {
 
 impl Visit for Checker<'_> {
     fn visit_expr(&mut self, e: &Expr) {
-        self.expr_depth += 1;
-        if self.expr_depth > MAX_EXPR_DEPTH {
-            if !self.depth_reported {
-                self.depth_reported = true;
-                self.err(
-                    e.span(),
-                    &format!("expression nesting exceeds the zts limit of {MAX_EXPR_DEPTH}"),
-                );
-            }
-        } else {
-            e.visit_children_with(self);
-        }
-        self.expr_depth -= 1;
+        self.guard_depth(e, |c| e.visit_children_with(c));
     }
 
     fn visit_match_expr(&mut self, m: &MatchExpr) {
+        self.has_match = true;
         self.check_match(m);
         m.visit_children_with(self);
+    }
+
+    fn visit_binding_ident(&mut self, b: &BindingIdent) {
+        self.note_global_this_shadow(&b.id);
+        b.visit_children_with(self);
+    }
+
+    fn visit_fn_decl(&mut self, d: &FnDecl) {
+        self.note_global_this_shadow(&d.ident);
+        d.visit_children_with(self);
+    }
+
+    fn visit_class_decl(&mut self, d: &ClassDecl) {
+        self.note_global_this_shadow(&d.ident);
+        d.visit_children_with(self);
+    }
+
+    fn visit_import_default_specifier(&mut self, s: &ImportDefaultSpecifier) {
+        self.note_global_this_shadow(&s.local);
+        s.visit_children_with(self);
+    }
+
+    fn visit_import_named_specifier(&mut self, s: &ImportNamedSpecifier) {
+        self.note_global_this_shadow(&s.local);
+        s.visit_children_with(self);
+    }
+
+    fn visit_import_star_as_specifier(&mut self, s: &ImportStarAsSpecifier) {
+        self.note_global_this_shadow(&s.local);
+        s.visit_children_with(self);
     }
 
     fn visit_ts_enum_decl(&mut self, e: &TsEnumDecl) {
@@ -147,6 +228,25 @@ struct SuspenderCheck<'a, 'b> {
 }
 
 impl Visit for SuspenderCheck<'_, '_> {
+    // Shares the Checker's depth budget: arm bodies are walked here before
+    // the main guarded walk reaches them, so an unguarded traversal would
+    // reintroduce the stack-overflow window this pass exists to close.
+    fn visit_expr(&mut self, e: &Expr) {
+        self.checker.expr_depth += 1;
+        if self.checker.expr_depth > MAX_EXPR_DEPTH {
+            if !self.checker.depth_reported {
+                self.checker.depth_reported = true;
+                self.checker.err(
+                    e.span(),
+                    &format!("expression nesting exceeds the zts limit of {MAX_EXPR_DEPTH}"),
+                );
+            }
+        } else {
+            e.visit_children_with(self);
+        }
+        self.checker.expr_depth -= 1;
+    }
+
     fn visit_await_expr(&mut self, e: &AwaitExpr) {
         self.checker.err(
             e.span,

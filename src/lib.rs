@@ -116,7 +116,15 @@ pub fn compile(
         bail!("failed to parse module");
     }
 
-    semantic::check(&module, handler)?;
+    if let Err(failure) = semantic::check(&module, handler) {
+        if failure.depth_exceeded {
+            // Drop for Expr recurses without stack protection; dropping an
+            // over-deep AST would SIGABRT after the diagnostic. Leak it —
+            // this path only fires on inputs we refuse to compile.
+            std::mem::forget(module);
+        }
+        return Err(failure.into());
+    }
 
     let mut program = Program::Module(module);
 
