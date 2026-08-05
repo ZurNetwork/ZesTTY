@@ -304,10 +304,32 @@ fn generated_js_runs_with_correct_semantics() {
     );
 }
 
+/// `@zestty/core` resolves through its `dist/` build output; make sure it
+/// exists so `cargo test` is self-sufficient (locally AND in CI) instead of
+/// depending on a prior `npm test` having built it as a side effect.
+fn ensure_core_dist() {
+    let dist = repo_root().join("packages/core/dist/index.d.ts");
+    if dist.exists() {
+        return;
+    }
+    let out = Command::new("npm")
+        .args(["run", "build", "-w", "@zestty/core"])
+        .current_dir(repo_root())
+        .output()
+        .expect("failed to spawn npm to build @zestty/core");
+    assert!(
+        out.status.success(),
+        "building @zestty/core failed:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 #[test]
 fn result_from_core_composes_with_match() {
     // The whole point: @zestty/core's Result + expression-if + match, one
     // file, verified by tsc end-to-end (feature #2's exit test).
+    ensure_core_dist();
     let (ts_path, _) = compile_to("result_match.zts", "exit_result.ts");
     let (ok, text) = tsc_with(
         &ts_path,
