@@ -1,0 +1,1 @@
+export const answer: number = if (true as boolean) { 42 } else { 0 };
