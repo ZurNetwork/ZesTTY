@@ -187,7 +187,23 @@ expression without `else` is a compile error.
 ### Deliberately deferred (do not implement yet)
 
 `Option<T>`, the `?` operator, `let`/`let mut`, traits (dictionary passing),
-newtypes, no-untracked-throws, move checking. These are on the horizon but
+newtypes, no-untracked-throws, move checking.
+
+Also deferred (Zuri, 2026-08-05): **`not` as a prefix operator** (`not expr`
+→ `!expr`). Rationale: `!expr` is visually easy to skip when reading, unlike
+`||`/`&&`; a loud negation keyword reduces misread-logic bugs. Implementation
+notes for whoever picks it up: `not` is a valid TS identifier (`not(x)`,
+`not.foo`, `not` alone must keep working), so this is a contextual-keyword
+speculation exactly like `match` — reuse the failure-memo + error-rollback
+discipline, and gate on the zts syntax flag.
+
+Considered and REJECTED (Zuri, 2026-08-05): paren-less `if` conditions.
+Statement `if` must stay vanilla TS (superset promise), and the `) {`
+boundary is load-bearing for the ASI guards; Rust only affords this by
+banning struct literals in conditions. Not worth re-opening that ambiguity
+class for cosmetics.
+
+These are on the horizon but
 **nothing gets built until Phase 2 below is green.**
 
 ---
