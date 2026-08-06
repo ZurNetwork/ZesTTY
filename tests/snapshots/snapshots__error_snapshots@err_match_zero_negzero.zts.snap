@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_match_zero_negzero.zts
+---
+error: duplicate literal match arm
+ --> tests/fixtures/errors/err_match_zero_negzero.zts:5:3
+  |
+5 |   -0 => "also zero",
+  |   ^^

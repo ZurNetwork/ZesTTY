@@ -112,4 +112,32 @@ const gv = match (gated) {
 expect("try bare-stmt propagates", gv, "gate");
 expect("try bare-stmt short-circuits", bareRan, 2);
 
+// Gate round: `?` in a single-statement slot propagates and short-circuits.
+function gateLoop(rs: NumRes[]): NumRes {
+  for (const r of rs) r?;
+  return NumRes.Ok(99);
+}
+const loopOk = match (gateLoop([NumRes.Ok(1), NumRes.Ok(2)])) {
+  Ok { value } => `${value}`,
+  Err { error } => error,
+};
+expect("slot try ok", loopOk, "99");
+const loopErr = match (gateLoop([NumRes.Ok(1), NumRes.Err("stop"), NumRes.Ok(3)])) {
+  Ok { value } => `${value}`,
+  Err { error } => error,
+};
+expect("slot try err", loopErr, "stop");
+
+// Gate round: bigint + null literal arms at runtime.
+const big = match (2n as 1n | 2n) {
+  1n => "one",
+  2n => "two",
+};
+expect("bigint match", big, "two");
+const none = match (null as string | null) {
+  null => "none",
+  _ => "some",
+};
+expect("null match", none, "none");
+
 console.log("exec_semantics: all assertions passed");

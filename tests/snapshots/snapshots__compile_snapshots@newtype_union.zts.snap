@@ -1,0 +1,16 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/newtype_union.zts
+---
+// Compiles in zts; tsc must reject the raw-literal call — the brand must
+// cover the WHOLE union underlying type, not just its last member.
+type Mode = ("read" | "write") & {
+    readonly __ztsNewtype: "Mode";
+};
+const Mode = (__ztsValue: "read" | "write"): Mode =>__ztsValue as Mode;
+function setMode(m: Mode): string {
+    return m;
+}
+setMode("read");
+setMode(Mode("read"));

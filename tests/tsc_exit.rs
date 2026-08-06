@@ -284,6 +284,86 @@ fn try_err_type_mismatch_fails_tsc() {
 }
 
 #[test]
+fn try_in_single_stmt_slots_passes_tsc() {
+    // Gate finding #1: these used to PANIC in codegen (ZtsTry survived
+    // lowering because the slots are not part of a Vec<Stmt>).
+    let (ts_path, _) = compile_to("try_single_stmt_slots.zts", "exit_try_slots.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected single-statement-slot try output:\n{text}");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        !code.contains("ZtsTry"),
+        "no try node may survive lowering:\n{code}"
+    );
+}
+
+#[test]
+fn newtype_over_union_id_confusion_fails_tsc() {
+    // Gate finding #2: without the parens the brand attached to the LAST
+    // union member only and the raw literal slipped through.
+    let (ts_path, _) = compile_to("newtype_union.zts", "exit_newtype_union.ts");
+    let (ok, text) = tsc_with(&ts_path, &[]);
+    assert!(!ok, "union brand must hold without --strict");
+    assert_eq!(
+        text.matches("error TS2345").count(),
+        1,
+        "exactly the raw-literal call must fail:\n{text}"
+    );
+}
+
+#[test]
+fn newtype_typeof_underlying_passes_tsc() {
+    // Gate finding #4: a `value`-named factory param was captured by
+    // `typeof value` underlying types (TS2502).
+    let (ts_path, _) = compile_to("newtype_typeof.zts", "exit_newtype_typeof.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected typeof/function-type newtypes:\n{text}");
+}
+
+#[test]
+fn try_with_destructuring_default_passes_tsc() {
+    // Gate finding #5: the permit for the statement's own `?` was burned
+    // by the arrow IIFE inside the destructuring default.
+    let (ts_path, _) = compile_to("try_destructuring_default.zts", "exit_try_destr.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected destructuring-default try:\n{text}");
+}
+
+#[test]
+fn bigint_and_null_literal_match_pass_tsc() {
+    let (ts_path, _) = compile_to("match_bigint.zts", "exit_bigint.ts");
+    let (ok, text) = tsc_with(&ts_path, &["--strict", "--target", "es2020"]);
+    assert!(ok, "tsc rejected bigint/null literal match:\n{text}");
+}
+
+#[test]
+fn try_guard_maps_to_original_question_mark() {
+    // The generated `if (__t.kind === "Err")` guard must map back to the
+    // `.zts` line carrying the `?` (breakpoint story).
+    let (ts_path, map_json) = compile_to("try_basic.zts", "exit_try_map.ts");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    let (gen_line, gen_col) = code
+        .lines()
+        .enumerate()
+        .find_map(|(i, l)| l.find("__t.kind").map(|c| (i as u32, c as u32)))
+        .expect("try guard not found");
+
+    let sm = swc_sourcemap::SourceMap::from_slice(map_json.as_bytes()).expect("invalid sourcemap");
+    let token = sm
+        .lookup_token(gen_line, gen_col)
+        .expect("no token for try guard");
+
+    let src = std::fs::read_to_string(repo_root().join("tests/fixtures/try_basic.zts")).unwrap();
+    let src_line = src.lines().nth(token.get_src_line() as usize).unwrap();
+    assert!(
+        src_line.contains('?'),
+        "try guard maps to {:?} (line {}), expected the `?` statement",
+        src_line,
+        token.get_src_line() + 1
+    );
+}
+
+#[test]
 fn arm_body_maps_to_original_span() {
     // Phase 2's "breakpoint in .zts" story depends on arm bodies mapping
     // back to their source, not just the absurd call.

@@ -1,0 +1,10 @@
+// Compiles in zts; tsc must reject the raw-literal call — the brand must
+// cover the WHOLE union underlying type, not just its last member.
+newtype Mode = "read" | "write";
+
+function setMode(m: Mode): string {
+  return m;
+}
+
+setMode("read");
+setMode(Mode("read"));

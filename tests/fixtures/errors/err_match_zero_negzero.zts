@@ -1,0 +1,7 @@
+declare const n: number;
+
+const bad = match (n) {
+  0 => "zero",
+  -0 => "also zero",
+  _ => "other",
+};

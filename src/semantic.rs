@@ -46,7 +46,7 @@ pub fn check(module: &Module, handler: &Handler) -> Result<(), SemanticFailure> 
         global_this_decls: Vec::new(),
         fn_depth: 0,
         zts_iife_depth: 0,
-        allow_try: false,
+        allow_try: None,
     };
     module.visit_with(&mut checker);
 
@@ -88,9 +88,11 @@ struct Checker<'a> {
     /// from the IIFE, not the user's function. Reset at function
     /// boundaries.
     zts_iife_depth: usize,
-    /// One-shot permit for the single sanctioned `?` of the current
-    /// statement (whole-RHS forms only).
-    allow_try: bool,
+    /// Identity of the one sanctioned `?` of the statement being visited
+    /// (whole-RHS forms only). Pointer identity — a flag would be burned
+    /// by unrelated statements nested in destructuring defaults, and would
+    /// blame the wrong `?` in `const { a = h()? } = g()?;`.
+    allow_try: Option<*const ZtsTryExpr>,
 }
 
 impl Checker<'_> {
@@ -179,11 +181,17 @@ impl Checker<'_> {
                         _ => mode = Some("lit"),
                     }
                     // Span-free identity: Debug on Lit embeds spans, which
-                    // would make every literal unique.
+                    // would make every literal unique. Numbers key on the
+                    // VALUE with `-0` collapsed to `0` (they are === in JS,
+                    // so a `-0` arm after `0` is dead code).
                     let key = match &l.lit {
                         Lit::Str(s) => format!("s:{:?}", s.value),
                         Lit::Num(n) => {
-                            format!("n:{}{}", if l.neg { "-" } else { "" }, n.value)
+                            let v = if l.neg { -n.value } else { n.value };
+                            format!("n:{}", v + 0.0)
+                        }
+                        Lit::BigInt(b) => {
+                            format!("bi:{}{}", if l.neg { "-" } else { "" }, b.value)
                         }
                         Lit::Bool(b) => format!("b:{}", b.value),
                         Lit::Null(..) => "null".to_string(),
@@ -264,12 +272,57 @@ fn stmt_top_try(s: &Stmt) -> Option<&ZtsTryExpr> {
     }
 }
 
+impl Checker<'_> {
+    /// One `enum`/`newtype` expands to a type alias + a const; two zts
+    /// declarations sharing a name in one scope would otherwise surface as
+    /// four confusing TS2451s on GENERATED code. Catch it here with one
+    /// error on the original span.
+    fn check_zts_decl_names<'x>(&mut self, decls: impl Iterator<Item = &'x Decl>) {
+        let mut seen: HashSet<&swc_atoms::Atom> = HashSet::new();
+        for decl in decls {
+            let ident = match decl {
+                Decl::ZtsEnum(e) => &e.ident,
+                Decl::ZtsNewtype(n) => &n.ident,
+                _ => continue,
+            };
+            if !seen.insert(&ident.sym) {
+                self.err(
+                    ident.span,
+                    &format!(
+                        "duplicate zts declaration `{}` in this scope (each enum/newtype \
+                         expands to a type alias AND a const of that name)",
+                        ident.sym
+                    ),
+                );
+            }
+        }
+    }
+}
+
 impl Visit for Checker<'_> {
     fn visit_expr(&mut self, e: &Expr) {
         self.guard_depth(e, |c| e.visit_children_with(c));
     }
 
+    fn visit_module_items(&mut self, items: &[ModuleItem]) {
+        self.check_zts_decl_names(items.iter().filter_map(|item| match item {
+            ModuleItem::Stmt(Stmt::Decl(d)) => Some(d),
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { decl, .. })) => Some(decl),
+            _ => None,
+        }));
+        items.visit_children_with(self);
+    }
+
+    fn visit_stmts(&mut self, stmts: &[Stmt]) {
+        self.check_zts_decl_names(stmts.iter().filter_map(|s| match s {
+            Stmt::Decl(d) => Some(d),
+            _ => None,
+        }));
+        stmts.visit_children_with(self);
+    }
+
     fn visit_stmt(&mut self, s: &Stmt) {
+        let saved = self.allow_try;
         if let Some(t) = stmt_top_try(s) {
             if self.fn_depth == 0 {
                 self.err(
@@ -284,17 +337,20 @@ impl Visit for Checker<'_> {
                      the construct lowers to an IIFE, which would hijack the early return",
                 );
             }
-            // Consume the permit either way — the context error already
-            // covers this `?`; the generic shape error would be noise.
-            self.allow_try = true;
+            // Permit this exact node either way — the context error above
+            // already covers it; the generic shape error would be noise.
+            self.allow_try = Some(t as *const ZtsTryExpr);
         }
         s.visit_children_with(self);
-        self.allow_try = false;
+        self.allow_try = saved;
     }
 
     fn visit_zts_try_expr(&mut self, t: &ZtsTryExpr) {
-        if self.allow_try {
-            self.allow_try = false;
+        if self
+            .allow_try
+            .is_some_and(|allowed| std::ptr::eq(t, allowed))
+        {
+            self.allow_try = None;
         } else {
             self.err(
                 t.span,
@@ -320,6 +376,17 @@ impl Visit for Checker<'_> {
         a.visit_children_with(self);
         self.zts_iife_depth = saved;
         self.fn_depth -= 1;
+    }
+
+    fn visit_static_block(&mut self, b: &StaticBlock) {
+        // A static block is not a function: `return` is illegal inside it,
+        // so `?` has nothing to return from. Reset the context so the
+        // "needs an enclosing function" error fires.
+        let saved_fn = std::mem::replace(&mut self.fn_depth, 0);
+        let saved_iife = std::mem::replace(&mut self.zts_iife_depth, 0);
+        b.visit_children_with(self);
+        self.fn_depth = saved_fn;
+        self.zts_iife_depth = saved_iife;
     }
 
     fn visit_zts_expr_block(&mut self, b: &ZtsExprBlock) {

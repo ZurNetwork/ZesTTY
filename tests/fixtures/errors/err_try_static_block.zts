@@ -1,0 +1,10 @@
+declare function g(): { kind: "Ok"; value: number } | { kind: "Err"; error: string };
+
+function outer(): void {
+  class C {
+    static {
+      const x = g()?;
+    }
+  }
+  console.log(C);
+}

@@ -1,0 +1,63 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/try_single_stmt_slots.zts
+---
+// `?` in single-statement slots (no surrounding statement list): each must
+// expand inside a block, keeping the early return's meaning.
+type R = {
+    kind: "Ok";
+    value: number;
+} | {
+    kind: "Err";
+    error: string;
+};
+declare function g(): R;
+declare const xs: R[];
+function slots(c: boolean): R | number {
+    if (c) {
+        const __t = g();
+        if (__t.kind === "Err") {
+            return __t;
+        }
+    } else {
+        const __t = g();
+        if (__t.kind === "Err") {
+            return __t;
+        }
+    }
+    while(c){
+        const __t = g();
+        if (__t.kind === "Err") {
+            return __t;
+        }
+    }
+    for(let i = 0; i < 2; i++){
+        const __t = g();
+        if (__t.kind === "Err") {
+            return __t;
+        }
+    }
+    for (const x of xs){
+        const __t = x;
+        if (__t.kind === "Err") {
+            return __t;
+        }
+    }
+    outer: {
+        const __t = g();
+        if (__t.kind === "Err") {
+            return __t;
+        }
+    }
+    // `return e?;` in a slot: unwraps to the Ok value.
+    if (c) {
+        const __t = g();
+        if (__t.kind === "Err") {
+            return __t;
+        }
+        return __t.value;
+    }
+    return g();
+}
+console.log(slots(true));

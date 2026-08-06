@@ -26,10 +26,10 @@ const Shape = {
         })
 };
 // Phase 5: newtype factories are identity casts — zero runtime cost.
-type Meters = number & {
+type Meters = (number) & {
     readonly __ztsNewtype: "Meters";
 };
-const Meters = (value: number): Meters =>value as Meters;
+const Meters = (__ztsValue: number): Meters =>__ztsValue as Meters;
 // Phase 5: `?` try operator — Ok unwraps, Err propagates, bare form
 // discards the value but still propagates.
 type NumRes = {
@@ -212,4 +212,65 @@ const gv = ((__m)=>{
 })(gated);
 expect("try bare-stmt propagates", gv, "gate");
 expect("try bare-stmt short-circuits", bareRan, 2);
+// Gate round: `?` in a single-statement slot propagates and short-circuits.
+function gateLoop(rs: NumRes[]): NumRes {
+    for (const r of rs){
+        const __t = r;
+        if (__t.kind === "Err") {
+            return __t;
+        }
+    }
+    return NumRes.Ok(99);
+}
+const loopOk = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Ok") {
+        const { value } = __m;
+        return `${value}`;
+    }
+    if (__k === "Err") {
+        const { error } = __m;
+        return error;
+    }
+    return __ztsAbsurd(__k);
+})(gateLoop([
+    NumRes.Ok(1),
+    NumRes.Ok(2)
+]));
+expect("slot try ok", loopOk, "99");
+const loopErr = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Ok") {
+        const { value } = __m;
+        return `${value}`;
+    }
+    if (__k === "Err") {
+        const { error } = __m;
+        return error;
+    }
+    return __ztsAbsurd(__k);
+})(gateLoop([
+    NumRes.Ok(1),
+    NumRes.Err("stop"),
+    NumRes.Ok(3)
+]));
+expect("slot try err", loopErr, "stop");
+// Gate round: bigint + null literal arms at runtime.
+const big = ((__m)=>{
+    if (__m === 1n) {
+        return "one";
+    }
+    if (__m === 2n) {
+        return "two";
+    }
+    return __ztsAbsurd(__m);
+})(2n as 1n | 2n);
+expect("bigint match", big, "two");
+const none = ((__m)=>{
+    if (__m === null) {
+        return "none";
+    }
+    return "some";
+})(null as string | null);
+expect("null match", none, "none");
 console.log("exec_semantics: all assertions passed");

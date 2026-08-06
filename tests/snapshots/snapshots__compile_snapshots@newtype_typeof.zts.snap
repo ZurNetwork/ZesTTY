@@ -1,0 +1,19 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/newtype_typeof.zts
+---
+type N = (typeof value) & {
+    readonly __ztsNewtype: "N";
+};
+const N = (__ztsValue: typeof value): N =>__ztsValue as N;
+// Function and union underlying types need the load-bearing parens.
+type Handler = ((x: number) => void) & {
+    readonly __ztsNewtype: "Handler";
+};
+const Handler = (__ztsValue: (x: number) => void): Handler =>__ztsValue as Handler;
+// The factory parameter must not capture user names: `typeof value` here
+// refers to the module const, not the generated parameter.
+export const value: number = 42;
+export const n = N(7);
+export const h = Handler((x: number)=>{});

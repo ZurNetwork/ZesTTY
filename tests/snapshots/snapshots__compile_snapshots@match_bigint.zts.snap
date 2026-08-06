@@ -1,0 +1,31 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/match_bigint.zts
+---
+function __ztsAbsurd(x: never): never {
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
+}
+type Flag = -1n | 0n | 1n;
+declare const flag: Flag;
+const label = ((__m)=>{
+    if (__m === -1n) {
+        return "neg";
+    }
+    if (__m === 0n) {
+        return "zero";
+    }
+    if (__m === 1n) {
+        return "pos";
+    }
+    return __ztsAbsurd(__m);
+})(flag);
+const nullable = ((__m)=>{
+    if (__m === null) {
+        return "none";
+    }
+    return "some";
+})(null as string | null);
+console.log(label, nullable);

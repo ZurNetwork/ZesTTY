@@ -3,14 +3,14 @@ source: tests/snapshots.rs
 expression: out.code
 input_file: tests/fixtures/newtype_basic.zts
 ---
-type AccountId = string & {
+type AccountId = (string) & {
     readonly __ztsNewtype: "AccountId";
 };
-const AccountId = (value: string): AccountId =>value as AccountId;
-type Meters = number & {
+const AccountId = (__ztsValue: string): AccountId =>__ztsValue as AccountId;
+type Meters = (number) & {
     readonly __ztsNewtype: "Meters";
 };
-const Meters = (value: number): Meters =>value as Meters;
+const Meters = (__ztsValue: number): Meters =>__ztsValue as Meters;
 const id = AccountId("acc_123");
 const dist = Meters(42);
 function describe(a: AccountId, d: Meters): string {
