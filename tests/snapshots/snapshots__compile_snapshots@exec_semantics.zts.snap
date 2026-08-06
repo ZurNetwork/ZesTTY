@@ -25,6 +25,11 @@ const Shape = {
             side
         })
 };
+// Phase 5: newtype factories are identity casts — zero runtime cost.
+type Meters = number & {
+    readonly __ztsNewtype: "Meters";
+};
+const Meters = (value: number): Meters =>value as Meters;
 // Executed by tests/tsc_exit.rs under node: every zts construct here must
 // produce the RIGHT VALUE at runtime, not merely typecheck. Guards against
 // precedence miscompiles that tsc cannot see.
@@ -70,4 +75,64 @@ expect("not", !c, false);
 expect("not-not", !!c, true);
 expect("not-binds-tight", !c === false, true);
 expect("not-in-if", !c ? 1 : 2, 2);
+// Phase 5: literal-union match + `_` wildcard.
+const level = "warn" as "debug" | "info" | "warn" | "error";
+expect("lit match", ((__m)=>{
+    if (__m === "debug") {
+        return 0;
+    }
+    if (__m === "info") {
+        return 1;
+    }
+    if (__m === "warn") {
+        return 2;
+    }
+    if (__m === "error") {
+        return 3;
+    }
+    return __ztsAbsurd(__m);
+})(level), 2);
+const code = -1 as -1 | 0 | 1;
+expect("neg lit match", ((__m)=>{
+    if (__m === -1) {
+        return "neg";
+    }
+    if (__m === 0) {
+        return "zero";
+    }
+    if (__m === 1) {
+        return "pos";
+    }
+    return __ztsAbsurd(__m);
+})(code), "neg");
+expect("bool lit match", ((__m)=>{
+    if (__m === true) {
+        return "y";
+    }
+    if (__m === false) {
+        return "n";
+    }
+    return __ztsAbsurd(__m);
+})(c), "y");
+expect("lit wildcard", ((__m)=>{
+    if (__m === "debug") {
+        return 0;
+    }
+    return 9;
+})(level), 9);
+let wildSide = 0;
+const wildVal = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Circle") {
+        const { radius } = __m;
+        return radius;
+    }
+    wildSide = 1;
+    return -1;
+})(sq);
+expect("variant wildcard value", wildVal, -1);
+expect("variant wildcard side effect", wildSide, 1);
+const m = Meters(5);
+expect("newtype identity", m, 5);
+expect("newtype arithmetic", m + 1, 6);
 console.log("exec_semantics: all assertions passed");

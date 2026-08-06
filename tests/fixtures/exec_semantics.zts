@@ -46,4 +46,32 @@ expect("not-not", not not c, true);
 expect("not-binds-tight", not c === false, true);
 expect("not-in-if", if (not c) { 1 } else { 2 }, 2);
 
+// Phase 5: literal-union match + `_` wildcard.
+const level = "warn" as "debug" | "info" | "warn" | "error";
+expect("lit match", match (level) { "debug" => 0, "info" => 1, "warn" => 2, "error" => 3 }, 2);
+
+const code = -1 as -1 | 0 | 1;
+expect("neg lit match", match (code) { -1 => "neg", 0 => "zero", 1 => "pos" }, "neg");
+
+expect("bool lit match", match (c) { true => "y", false => "n" }, "y");
+
+expect("lit wildcard", match (level) { "debug" => 0, _ => 9 }, 9);
+
+let wildSide = 0;
+const wildVal = match (sq) {
+  Circle { radius } => radius,
+  _ => {
+    wildSide = 1;
+    -1
+  },
+};
+expect("variant wildcard value", wildVal, -1);
+expect("variant wildcard side effect", wildSide, 1);
+
+// Phase 5: newtype factories are identity casts — zero runtime cost.
+newtype Meters = number;
+const m = Meters(5);
+expect("newtype identity", m, 5);
+expect("newtype arithmetic", m + 1, 6);
+
 console.log("exec_semantics: all assertions passed");

@@ -19,6 +19,23 @@
 //!
 //! Never a TypeScript `enum` — tagged unions + factory functions only.
 //!
+//! Also lowers newtypes (Phase 5), which share the one-decl-becomes-two
+//! shape and the same hoisting/export rules:
+//!
+//! ```ts
+//! // zts source
+//! newtype AccountId = string;
+//!
+//! // generated TS
+//! type AccountId = string & { readonly __ztsNewtype: "AccountId" };
+//! const AccountId = (value: string): AccountId => value as AccountId;
+//! ```
+//!
+//! The brand property exists only at the type level (the factory is an
+//! identity cast — zero runtime cost), so two newtypes over the same
+//! underlying type are mutually unassignable and the raw type is not
+//! assignable to either: the ID-confusion bug class becomes TS2345.
+//!
 //! This pass runs BEFORE the resolver, unlike match lowering: it emits
 //! ordinary user-named declarations (no `__zts` glue), so letting the
 //! resolver scope them like hand-written code is both simpler and safer
@@ -200,6 +217,98 @@ fn lower_enum(e: &ZtsEnumDecl) -> (Decl, Decl) {
     (type_alias, factories)
 }
 
+/// One zts newtype → (branded type alias, factory const).
+fn lower_newtype(n: &ZtsNewtypeDecl) -> (Decl, Decl) {
+    // { readonly __ztsNewtype: "Name" }
+    let brand = TsType::TsTypeLit(TsTypeLit {
+        span: n.ident.span,
+        members: vec![TsTypeElement::TsPropertySignature(TsPropertySignature {
+            span: n.ident.span,
+            readonly: true,
+            key: Box::new(Expr::Ident(Ident::new_no_ctxt(
+                atom!("__ztsNewtype"),
+                n.ident.span,
+            ))),
+            computed: false,
+            optional: false,
+            type_ann: Some(Box::new(TsTypeAnn {
+                span: n.ident.span,
+                type_ann: Box::new(TsType::TsLitType(TsLitType {
+                    span: n.ident.span,
+                    lit: TsLit::Str(Str {
+                        span: n.ident.span,
+                        value: n.ident.sym.clone().into(),
+                        raw: None,
+                    }),
+                })),
+            })),
+        })],
+    });
+
+    // type Name = <underlying> & { readonly __ztsNewtype: "Name" };
+    let type_alias = Decl::TsTypeAlias(Box::new(TsTypeAliasDecl {
+        span: n.span,
+        declare: false,
+        id: n.ident.clone(),
+        type_params: None,
+        type_ann: Box::new(TsType::TsUnionOrIntersectionType(
+            TsUnionOrIntersectionType::TsIntersectionType(TsIntersectionType {
+                span: n.span,
+                types: vec![n.type_ann.clone(), Box::new(brand)],
+            }),
+        )),
+    }));
+
+    let name_ty = |span| {
+        Box::new(TsType::TsTypeRef(TsTypeRef {
+            span,
+            type_name: TsEntityName::Ident(n.ident.clone()),
+            type_params: None,
+        }))
+    };
+
+    // const Name = (value: <underlying>): Name => value as Name;
+    let value_ident = Ident::new_no_ctxt(atom!("value"), n.span);
+    let arrow = ArrowExpr {
+        span: n.span,
+        ctxt: SyntaxContext::empty(),
+        params: vec![Pat::Ident(BindingIdent {
+            id: value_ident.clone(),
+            type_ann: Some(Box::new(TsTypeAnn {
+                span: n.span,
+                type_ann: n.type_ann.clone(),
+            })),
+        })],
+        body: Box::new(BlockStmtOrExpr::Expr(Box::new(Expr::TsAs(TsAsExpr {
+            span: n.span,
+            expr: Box::new(Expr::Ident(value_ident)),
+            type_ann: name_ty(n.span),
+        })))),
+        is_async: false,
+        is_generator: false,
+        type_params: None,
+        return_type: Some(Box::new(TsTypeAnn {
+            span: n.ident.span,
+            type_ann: name_ty(n.ident.span),
+        })),
+    };
+
+    let factory = Decl::Var(Box::new(VarDecl {
+        span: n.span,
+        ctxt: SyntaxContext::empty(),
+        kind: VarDeclKind::Const,
+        declare: false,
+        decls: vec![VarDeclarator {
+            span: n.span,
+            name: Pat::Ident(n.ident.clone().into()),
+            init: Some(Box::new(Expr::Arrow(arrow))),
+            definite: false,
+        }],
+    }));
+
+    (type_alias, factory)
+}
+
 /// First index past the directive prologue (and, for modules, past leading
 /// imports): the hoist target. Enum expansions are pure declarations
 /// (a type alias + an object literal of arrows), so evaluation order is
@@ -236,6 +345,19 @@ fn stmts_hoist_index(stmts: &[Stmt]) -> usize {
     idx
 }
 
+/// If `decl` is a zts construct that expands to two declarations, lower it.
+fn lower_zts_decl(decl: Decl) -> Result<(Decl, Decl), Decl> {
+    match decl {
+        Decl::ZtsEnum(e) => Ok(lower_enum(&e)),
+        Decl::ZtsNewtype(n) => Ok(lower_newtype(&n)),
+        other => Err(other),
+    }
+}
+
+fn is_zts_decl(decl: &Decl) -> bool {
+    matches!(decl, Decl::ZtsEnum(..) | Decl::ZtsNewtype(..))
+}
+
 impl VisitMut for LowerEnums {
     fn visit_mut_module_items(&mut self, items: &mut Vec<ModuleItem>) {
         items.visit_mut_children_with(self);
@@ -243,11 +365,11 @@ impl VisitMut for LowerEnums {
         if !items.iter().any(|item| {
             matches!(
                 item,
-                ModuleItem::Stmt(Stmt::Decl(Decl::ZtsEnum(..)))
-                    | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-                        decl: Decl::ZtsEnum(..),
-                        ..
-                    }))
+                ModuleItem::Stmt(Stmt::Decl(d)) if is_zts_decl(d)
+            ) || matches!(
+                item,
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { decl, .. }))
+                    if is_zts_decl(decl)
             )
         }) {
             return;
@@ -257,16 +379,15 @@ impl VisitMut for LowerEnums {
         let mut out: Vec<ModuleItem> = Vec::with_capacity(items.len());
         for item in items.drain(..) {
             match item {
-                ModuleItem::Stmt(Stmt::Decl(Decl::ZtsEnum(e))) => {
-                    let (ty, factories) = lower_enum(&e);
+                ModuleItem::Stmt(Stmt::Decl(d)) if is_zts_decl(&d) => {
+                    let (ty, factories) = lower_zts_decl(d).unwrap();
                     hoisted.push(ModuleItem::Stmt(Stmt::Decl(ty)));
                     hoisted.push(ModuleItem::Stmt(Stmt::Decl(factories)));
                 }
-                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-                    span,
-                    decl: Decl::ZtsEnum(e),
-                })) => {
-                    let (ty, factories) = lower_enum(&e);
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { span, decl }))
+                    if is_zts_decl(&decl) =>
+                {
+                    let (ty, factories) = lower_zts_decl(decl).unwrap();
                     let export = |decl: Decl| {
                         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { span, decl }))
                     };
@@ -286,7 +407,7 @@ impl VisitMut for LowerEnums {
 
         if !stmts
             .iter()
-            .any(|s| matches!(s, Stmt::Decl(Decl::ZtsEnum(..))))
+            .any(|s| matches!(s, Stmt::Decl(d) if is_zts_decl(d)))
         {
             return;
         }
@@ -295,8 +416,8 @@ impl VisitMut for LowerEnums {
         let mut out: Vec<Stmt> = Vec::with_capacity(stmts.len());
         for stmt in stmts.drain(..) {
             match stmt {
-                Stmt::Decl(Decl::ZtsEnum(e)) => {
-                    let (ty, factories) = lower_enum(&e);
+                Stmt::Decl(d) if is_zts_decl(&d) => {
+                    let (ty, factories) = lower_zts_decl(d).unwrap();
                     hoisted.push(Stmt::Decl(ty));
                     hoisted.push(Stmt::Decl(factories));
                 }
@@ -309,9 +430,10 @@ impl VisitMut for LowerEnums {
     }
 
     // Defense in depth for single-statement positions (`if (c) enum E {}`
-    // style): the parser rejects these under zts, but `Decl::ZtsEnum` is
-    // public API — never let one reach codegen's `unreachable!`. These are
-    // the only Stmt slots that are not part of a `Vec<Stmt>`.
+    // style): the parser rejects these under zts, but `Decl::ZtsEnum` /
+    // `Decl::ZtsNewtype` are public API — never let one reach codegen's
+    // `unreachable!`. These are the only Stmt slots that are not part of a
+    // `Vec<Stmt>`.
 
     fn visit_mut_if_stmt(&mut self, s: &mut IfStmt) {
         s.visit_mut_children_with(self);
@@ -357,10 +479,10 @@ impl VisitMut for LowerEnums {
     }
 }
 
-/// If `stmt` is a bare zts enum declaration, expand it inside a block.
+/// If `stmt` is a bare zts enum/newtype declaration, expand it in a block.
 fn wrap_single_stmt_enum(stmt: &mut Stmt) {
-    if matches!(stmt, Stmt::Decl(Decl::ZtsEnum(..))) {
-        let Stmt::Decl(Decl::ZtsEnum(e)) = std::mem::replace(
+    if matches!(stmt, Stmt::Decl(d) if is_zts_decl(d)) {
+        let Stmt::Decl(decl) = std::mem::replace(
             stmt,
             Stmt::Empty(EmptyStmt {
                 span: swc_common::DUMMY_SP,
@@ -368,9 +490,14 @@ fn wrap_single_stmt_enum(stmt: &mut Stmt) {
         ) else {
             unreachable!()
         };
-        let (ty, factories) = lower_enum(&e);
+        let span = match &decl {
+            Decl::ZtsEnum(e) => e.span,
+            Decl::ZtsNewtype(n) => n.span,
+            _ => unreachable!(),
+        };
+        let (ty, factories) = lower_zts_decl(decl).unwrap();
         *stmt = Stmt::Block(BlockStmt {
-            span: e.span,
+            span,
             ctxt: SyntaxContext::empty(),
             stmts: vec![Stmt::Decl(ty), Stmt::Decl(factories)],
         });

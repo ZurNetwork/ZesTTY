@@ -1,0 +1,11 @@
+export newtype UserId = string;
+
+// Forward reference: newtypes hoist like enums, so use-before-decl works.
+const admin = OrgId("org_1");
+export newtype OrgId = string;
+
+export function link(u: UserId, o: OrgId): string {
+  return `${u}@${o}`;
+}
+
+console.log(link(UserId("u_1"), admin));

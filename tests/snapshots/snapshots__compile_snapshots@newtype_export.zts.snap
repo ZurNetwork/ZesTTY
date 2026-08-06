@@ -1,0 +1,19 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/newtype_export.zts
+---
+export type UserId = string & {
+    readonly __ztsNewtype: "UserId";
+};
+export const UserId = (value: string): UserId =>value as UserId;
+export type OrgId = string & {
+    readonly __ztsNewtype: "OrgId";
+};
+export const OrgId = (value: string): OrgId =>value as OrgId;
+// Forward reference: newtypes hoist like enums, so use-before-decl works.
+const admin = OrgId("org_1");
+export function link(u: UserId, o: OrgId): string {
+    return `${u}@${o}`;
+}
+console.log(link(UserId("u_1"), admin));
