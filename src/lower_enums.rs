@@ -320,6 +320,166 @@ fn lower_newtype(n: &ZtsNewtypeDecl) -> (Decl, Decl) {
     (type_alias, factory)
 }
 
+/// One zts union → (literal-union type alias, values/has const).
+///
+/// ```ts
+/// type Level = 'info' | 'warn';
+/// const Level = {
+///     values: ['info', 'warn'] as const,
+///     has: (__ztsRaw: string): __ztsRaw is Level =>
+///         (Level.values as readonly string[]).includes(__ztsRaw),
+/// };
+/// ```
+fn lower_union(u: &ZtsUnionDecl) -> (Decl, Decl) {
+    let str_kw = || {
+        Box::new(TsType::TsKeywordType(TsKeywordType {
+            span: u.span,
+            kind: TsKeywordTypeKind::TsStringKeyword,
+        }))
+    };
+    let name_ty = || {
+        Box::new(TsType::TsTypeRef(TsTypeRef {
+            span: u.ident.span,
+            type_name: TsEntityName::Ident(u.ident.clone()),
+            type_params: None,
+        }))
+    };
+
+    // type Name = 'a' | 'b';
+    let union_ty: Box<TsType> = match u.members.len() {
+        1 => Box::new(TsType::TsLitType(TsLitType {
+            span: u.members[0].span,
+            lit: TsLit::Str(u.members[0].clone()),
+        })),
+        _ => Box::new(TsType::TsUnionOrIntersectionType(
+            TsUnionOrIntersectionType::TsUnionType(TsUnionType {
+                span: u.span,
+                types: u
+                    .members
+                    .iter()
+                    .map(|m| {
+                        Box::new(TsType::TsLitType(TsLitType {
+                            span: m.span,
+                            lit: TsLit::Str(m.clone()),
+                        }))
+                    })
+                    .collect(),
+            }),
+        )),
+    };
+    let type_alias = Decl::TsTypeAlias(Box::new(TsTypeAliasDecl {
+        span: u.span,
+        declare: false,
+        id: u.ident.clone(),
+        type_params: None,
+        type_ann: union_ty,
+    }));
+
+    // ['a', 'b'] as const
+    let values_array = Expr::TsConstAssertion(TsConstAssertion {
+        span: u.span,
+        expr: Box::new(Expr::Array(ArrayLit {
+            span: u.span,
+            elems: u
+                .members
+                .iter()
+                .map(|m| {
+                    Some(ExprOrSpread {
+                        spread: None,
+                        expr: Box::new(Expr::Lit(Lit::Str(m.clone()))),
+                    })
+                })
+                .collect(),
+        })),
+    });
+
+    // Name.values.includes(__ztsRaw as Name)
+    //
+    // The cast rides on the ARGUMENT, not the receiver: a receiver cast
+    // (`(values as readonly string[]).includes`) needs parens that the
+    // paren-stripping fixer removes (miscompile), and `includes` on the
+    // as-const tuple wants the member union anyway.
+    let raw_ident = Ident::new_no_ctxt(atom!("__ztsRaw"), u.span);
+    let includes_call = Expr::Call(CallExpr {
+        span: u.span,
+        ctxt: SyntaxContext::empty(),
+        callee: Callee::Expr(Box::new(Expr::Member(MemberExpr {
+            span: u.span,
+            obj: Box::new(Expr::Member(MemberExpr {
+                span: u.span,
+                obj: Box::new(Expr::Ident(u.ident.clone())),
+                prop: MemberProp::Ident(IdentName::new(atom!("values"), u.span)),
+            })),
+            prop: MemberProp::Ident(IdentName::new(atom!("includes"), u.span)),
+        }))),
+        args: vec![ExprOrSpread {
+            spread: None,
+            expr: Box::new(Expr::TsAs(TsAsExpr {
+                span: u.span,
+                expr: Box::new(Expr::Ident(raw_ident.clone())),
+                type_ann: name_ty(),
+            })),
+        }],
+        type_args: None,
+    });
+
+    // (__ztsRaw: string): __ztsRaw is Name => ...
+    let has_arrow = ArrowExpr {
+        span: u.span,
+        ctxt: SyntaxContext::empty(),
+        params: vec![Pat::Ident(BindingIdent {
+            id: raw_ident.clone(),
+            type_ann: Some(Box::new(TsTypeAnn {
+                span: u.span,
+                type_ann: str_kw(),
+            })),
+        })],
+        body: Box::new(BlockStmtOrExpr::Expr(Box::new(includes_call))),
+        is_async: false,
+        is_generator: false,
+        type_params: None,
+        return_type: Some(Box::new(TsTypeAnn {
+            span: u.span,
+            type_ann: Box::new(TsType::TsTypePredicate(TsTypePredicate {
+                span: u.span,
+                asserts: false,
+                param_name: TsThisTypeOrIdent::Ident(raw_ident),
+                type_ann: Some(Box::new(TsTypeAnn {
+                    span: u.span,
+                    type_ann: name_ty(),
+                })),
+            })),
+        })),
+    };
+
+    let obj = Decl::Var(Box::new(VarDecl {
+        span: u.span,
+        ctxt: SyntaxContext::empty(),
+        kind: VarDeclKind::Const,
+        declare: false,
+        decls: vec![VarDeclarator {
+            span: u.span,
+            name: Pat::Ident(u.ident.clone().into()),
+            init: Some(Box::new(Expr::Object(ObjectLit {
+                span: u.span,
+                props: vec![
+                    PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
+                        key: PropName::Ident(IdentName::new(atom!("values"), u.span)),
+                        value: Box::new(values_array),
+                    }))),
+                    PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
+                        key: PropName::Ident(IdentName::new(atom!("has"), u.span)),
+                        value: Box::new(Expr::Arrow(has_arrow)),
+                    }))),
+                ],
+            }))),
+            definite: false,
+        }],
+    }));
+
+    (type_alias, obj)
+}
+
 /// First index past the directive prologue (and, for modules, past leading
 /// imports): the hoist target. Enum expansions are pure declarations
 /// (a type alias + an object literal of arrows), so evaluation order is
@@ -361,12 +521,16 @@ fn lower_zts_decl(decl: Decl) -> Result<(Decl, Decl), Decl> {
     match decl {
         Decl::ZtsEnum(e) => Ok(lower_enum(&e)),
         Decl::ZtsNewtype(n) => Ok(lower_newtype(&n)),
+        Decl::ZtsUnion(u) => Ok(lower_union(&u)),
         other => Err(other),
     }
 }
 
 fn is_zts_decl(decl: &Decl) -> bool {
-    matches!(decl, Decl::ZtsEnum(..) | Decl::ZtsNewtype(..))
+    matches!(
+        decl,
+        Decl::ZtsEnum(..) | Decl::ZtsNewtype(..) | Decl::ZtsUnion(..)
+    )
 }
 
 impl VisitMut for LowerEnums {
@@ -504,6 +668,7 @@ fn wrap_single_stmt_enum(stmt: &mut Stmt) {
         let span = match &decl {
             Decl::ZtsEnum(e) => e.span,
             Decl::ZtsNewtype(n) => n.span,
+            Decl::ZtsUnion(u) => u.span,
             _ => unreachable!(),
         };
         let (ty, factories) = lower_zts_decl(decl).unwrap();

@@ -1,0 +1,11 @@
+// Compiles in zts; tsc must reject the match — 'error' has no arm.
+union Level = 'info' | 'warn' | 'error';
+
+declare const l: Level;
+
+const rank = match (l) {
+  'info' => 0,
+  'warn' => 1,
+};
+
+console.log(rank);

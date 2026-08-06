@@ -322,6 +322,33 @@ single-statement slots (`if (c) g()?;`,
 loop bodies, labels) the expansion is wrapped in a block, so the early
 return keeps its meaning.
 
+### 7. `union` — closed string vocabularies (Zuri-approved, 2026-08-06)
+
+A literal-union type WITH a runtime side: the values list and the
+membership guard that plain `type` aliases can't give you.
+
+```ts
+// zts source
+union DeleteOutcome = 'soft' | 'hard' | 'unknown';
+
+// generated TS
+type DeleteOutcome = 'soft' | 'hard' | 'unknown';
+const DeleteOutcome = {
+  values: ['soft', 'hard', 'unknown'] as const,
+  has: (__ztsRaw: string): __ztsRaw is DeleteOutcome =>
+    DeleteOutcome.values.includes(__ztsRaw as DeleteOutcome),
+};
+```
+
+The wire-normalizer stops hand-listing literals — `DeleteOutcome.has(raw)`
+narrows, so `has(raw) ? raw : 'unknown'` is the whole R8 fail-closed
+mapping — while the closed side keeps exhaustive `match` (a missing member
+is a TS2345 naming it). Members are string literals only in v1 (numbers
+would widen the guard's parameter type); duplicates are a compile error;
+leading `|` allowed; same contextual-keyword commit rule, hoisting, and
+export behavior as `newtype`. The `includes` cast rides on the argument —
+a receiver cast would need parens the fixer strips (load-bearing).
+
 ### Deliberately deferred (do not implement yet)
 
 `Option<T>`, `let`/`let mut`, traits (dictionary passing),

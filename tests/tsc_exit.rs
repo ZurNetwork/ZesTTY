@@ -373,6 +373,39 @@ fn object_accessor_try_passes_tsc() {
 }
 
 #[test]
+fn union_passes_tsc_and_guard_narrows() {
+    // `union` (Zuri-approved 2026-08-06): has() must narrow a raw string
+    // to the vocabulary type under --strict, and the closed side stays
+    // exhaustively matchable.
+    let (ts_path, _) = compile_to("union_basic.zts", "exit_union.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected union output:\n{text}");
+}
+
+#[test]
+fn exported_union_passes_tsc_and_stays_exported() {
+    let (ts_path, _) = compile_to("union_export.zts", "exit_union_export.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected exported union output:\n{text}");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("export type Level") && code.contains("export const Level"),
+        "both halves must stay exported:\n{code}"
+    );
+}
+
+#[test]
+fn union_missing_arm_fails_tsc_naming_the_literal() {
+    let (ts_path, _) = compile_to("union_missing_arm.zts", "exit_union_missing.ts");
+    let (ok, text) = tsc_with(&ts_path, &[]);
+    assert!(!ok, "union exhaustiveness must hold without --strict");
+    assert!(
+        text.contains("error TS2345") && text.contains("\"error\""),
+        "tsc must name the missing member:\n{text}"
+    );
+}
+
+#[test]
 fn arm_body_maps_to_original_span() {
     // Phase 2's "breakpoint in .zts" story depends on arm bodies mapping
     // back to their source, not just the absurd call.

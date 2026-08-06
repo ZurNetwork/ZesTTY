@@ -334,6 +334,7 @@ impl Checker<'_> {
             let ident = match decl {
                 Decl::ZtsEnum(e) => &e.ident,
                 Decl::ZtsNewtype(n) => &n.ident,
+                Decl::ZtsUnion(u) => &u.ident,
                 _ => continue,
             };
             if !seen.insert(&ident.sym) {
@@ -712,6 +713,16 @@ impl Visit for Checker<'_> {
             }
         }
         e.visit_children_with(self);
+    }
+
+    fn visit_zts_union_decl(&mut self, u: &ZtsUnionDecl) {
+        let mut seen: HashSet<&swc_atoms::Wtf8Atom> = HashSet::with_capacity(u.members.len());
+        for m in &u.members {
+            if !seen.insert(&m.value) {
+                self.err(m.span, "duplicate union member");
+            }
+        }
+        u.visit_children_with(self);
     }
 
     fn visit_ts_enum_decl(&mut self, e: &TsEnumDecl) {

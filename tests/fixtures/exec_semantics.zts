@@ -140,4 +140,12 @@ const none = match (null as string | null) {
 };
 expect("null match", none, "none");
 
+// union: runtime values + membership guard.
+union Grade = 'low' | 'high';
+expect("union values", Grade.values.join(","), "low,high");
+expect("union has yes", Grade.has("low"), true);
+expect("union has no", Grade.has("mid"), false);
+const g = Grade.has("high") ? "high" : "low";
+expect("union guard", match (g) { 'low' => 0, 'high' => 1 }, 1);
+
 console.log("exec_semantics: all assertions passed");

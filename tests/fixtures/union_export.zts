@@ -1,0 +1,6 @@
+// Hoisting: use-before-declaration works, and export covers both halves.
+const early = Level.has('warn');
+
+export union Level = | 'info' | 'warn' | 'error';
+
+console.log(early, Level.values);
