@@ -41,4 +41,9 @@ expect("match", area, 9);
 const graded = if (area > 100) { "big" } else if (area > 5) { "mid" } else { "small" };
 expect("chain", graded, "mid");
 
+expect("not", not c, false);
+expect("not-not", not not c, true);
+expect("not-binds-tight", not c === false, true);
+expect("not-in-if", if (not c) { 1 } else { 2 }, 2);
+
 console.log("exec_semantics: all assertions passed");

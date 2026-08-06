@@ -1,0 +1,17 @@
+declare const ready: boolean;
+declare const items: string[];
+declare function not(n: number): number;
+
+// Negation forms.
+const a = not ready;
+const b = not not ready;
+const c = if (not ready) { "wait" } else { "go" };
+const d = match (({ kind: "K", ok: ready }) as { kind: "K"; ok: boolean }) {
+  K { ok } => not ok,
+};
+
+// Vanilla survivors: `not` as an ordinary identifier.
+const e = not(1);
+const f = not(2) + 1;
+
+console.log(a, b, c, d, e, f, items.length);
