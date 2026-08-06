@@ -60,3 +60,51 @@ test("composes with the match lowering convention (kind checks)", () => {
   else out = -1;
   assert.equal(out, 42);
 });
+
+test("and_then chains Result-returning fns and passes Err through", async () => {
+  const { and_then } = await import("../dist/index.js");
+  assert.deepEqual(
+    and_then(Ok(2), (n) => Ok(n * 5)),
+    Ok(10),
+  );
+  assert.deepEqual(
+    and_then(Ok(2), () => Err("inner")),
+    Err("inner"),
+  );
+  const e = Err("outer");
+  assert.equal(
+    and_then(e, () => Ok(1)),
+    e,
+  );
+});
+
+test("ResultPipe chains left-to-right and returns plain data", async () => {
+  const { ResultPipe } = await import("../dist/index.js");
+  const out = ResultPipe(Ok(2))
+    .map((n) => n + 1)
+    .and_then((n) => (n > 0 ? Ok(n * 10) : Err("neg")))
+    .map_err((e) => `wrapped: ${e}`)
+    .done();
+  assert.deepEqual(out, Ok(30));
+  // done() returns a PLAIN tagged object — survives structuredClone.
+  assert.deepEqual(structuredClone(out), Ok(30));
+  assert.equal(Object.getPrototypeOf(out), Object.prototype);
+
+  const err = ResultPipe(Err("boom"))
+    .map((n) => n + 1)
+    .map_err((e) => `wrapped: ${e}`)
+    .done();
+  assert.deepEqual(err, Err("wrapped: boom"));
+});
+
+test("ResultPipe unwrap terminals", async () => {
+  const { ResultPipe } = await import("../dist/index.js");
+  assert.equal(
+    ResultPipe(Ok(7))
+      .map((n) => n + 1)
+      .unwrap(),
+    8,
+  );
+  assert.equal(ResultPipe(Err("boom")).unwrap_or(42), 42);
+  assert.throws(() => ResultPipe(Err("boom")).unwrap(), /boom/);
+});

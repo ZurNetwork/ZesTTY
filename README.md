@@ -158,9 +158,22 @@ A **library feature**, not syntax. Ships as a tiny runtime package
 type Result<T, E> = { kind: "Ok"; value: T } | { kind: "Err"; error: E };
 ```
 
-Plus `Ok()`, `Err()` constructors and `map` / `map_err` combinators. Must use
-the same `kind` discriminant convention as everything else so it composes with
-`match`. Zero fork changes.
+Plus `Ok()`, `Err()` constructors and combinators: `map`, `map_err`,
+`and_then`, `is_ok`/`is_err` guards, `unwrap`/`unwrap_or`. Must use the same
+`kind` discriminant convention as everything else so it composes with
+`match` and `?`. Zero fork changes.
+
+Results are plain tagged objects — combinators are FREE FUNCTIONS, never
+methods, so a Result survives JSON/structuredClone/network boundaries. For
+Rust-style left-to-right chaining, `ResultPipe` (approved by Zuri,
+2026-08-06) wraps them ephemerally:
+
+```ts
+const out = ResultPipe(parsePort(raw))
+  .map((p) => p + 1)
+  .map_err((e) => `boot failed: ${e}`)
+  .done(); // plain Result back out — the pipe itself is never stored/sent
+```
 
 ### 3. Enums-with-data
 
