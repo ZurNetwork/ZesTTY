@@ -1,0 +1,6 @@
+declare function f(): { kind: "Ok"; value: number } | { kind: "Err"; error: string };
+declare function g(n: unknown, m: unknown): void;
+
+function use(): void {
+  g(f()?, [f()?]);
+}

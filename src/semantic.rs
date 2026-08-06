@@ -44,6 +44,9 @@ pub fn check(module: &Module, handler: &Handler) -> Result<(), SemanticFailure> 
         depth_reported: false,
         has_match: false,
         global_this_decls: Vec::new(),
+        fn_depth: 0,
+        zts_iife_depth: 0,
+        allow_try: false,
     };
     module.visit_with(&mut checker);
 
@@ -77,6 +80,17 @@ struct Checker<'a> {
     depth_reported: bool,
     has_match: bool,
     global_this_decls: Vec<Span>,
+    /// Nesting depth of real functions (fn/arrow/method): `?` needs an
+    /// enclosing function to return the `Err` from.
+    fn_depth: usize,
+    /// Inside a construct that lowers to a synchronous IIFE (match arm
+    /// block, if-expression block): an early `return` there would return
+    /// from the IIFE, not the user's function. Reset at function
+    /// boundaries.
+    zts_iife_depth: usize,
+    /// One-shot permit for the single sanctioned `?` of the current
+    /// statement (whole-RHS forms only).
+    allow_try: bool,
 }
 
 impl Checker<'_> {
@@ -226,9 +240,92 @@ impl Checker<'_> {
     }
 }
 
+/// The `?` operator's sanctioned v1 shapes: the try is the WHOLE top-level
+/// expression of one of these statements. Anything deeper would hoist the
+/// operand's evaluation past sibling subexpressions — a silent side-effect
+/// reorder — so v1 rejects it.
+fn stmt_top_try(s: &Stmt) -> Option<&ZtsTryExpr> {
+    match s {
+        Stmt::Decl(Decl::Var(v)) if v.decls.len() == 1 && !v.declare => {
+            match v.decls[0].init.as_deref() {
+                Some(Expr::ZtsTry(t)) => Some(t),
+                _ => None,
+            }
+        }
+        Stmt::Return(r) => match r.arg.as_deref() {
+            Some(Expr::ZtsTry(t)) => Some(t),
+            _ => None,
+        },
+        Stmt::Expr(e) => match &*e.expr {
+            Expr::ZtsTry(t) => Some(t),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 impl Visit for Checker<'_> {
     fn visit_expr(&mut self, e: &Expr) {
         self.guard_depth(e, |c| e.visit_children_with(c));
+    }
+
+    fn visit_stmt(&mut self, s: &Stmt) {
+        if let Some(t) = stmt_top_try(s) {
+            if self.fn_depth == 0 {
+                self.err(
+                    t.span,
+                    "`?` needs an enclosing function to return the `Err` from; it cannot be \
+                     used at module top level",
+                );
+            } else if self.zts_iife_depth > 0 {
+                self.err(
+                    t.span,
+                    "`?` inside a match arm or if-expression block is not supported in v1: \
+                     the construct lowers to an IIFE, which would hijack the early return",
+                );
+            }
+            // Consume the permit either way — the context error already
+            // covers this `?`; the generic shape error would be noise.
+            self.allow_try = true;
+        }
+        s.visit_children_with(self);
+        self.allow_try = false;
+    }
+
+    fn visit_zts_try_expr(&mut self, t: &ZtsTryExpr) {
+        if self.allow_try {
+            self.allow_try = false;
+        } else {
+            self.err(
+                t.span,
+                "`?` is not allowed here in v1: it must be the whole right-hand side of a \
+                 `const`/`let` declaration, a `return`, or an expression statement inside a \
+                 function body (nested `?` would silently reorder side effects)",
+            );
+        }
+        t.visit_children_with(self);
+    }
+
+    fn visit_function(&mut self, f: &Function) {
+        self.fn_depth += 1;
+        let saved = std::mem::replace(&mut self.zts_iife_depth, 0);
+        f.visit_children_with(self);
+        self.zts_iife_depth = saved;
+        self.fn_depth -= 1;
+    }
+
+    fn visit_arrow_expr(&mut self, a: &ArrowExpr) {
+        self.fn_depth += 1;
+        let saved = std::mem::replace(&mut self.zts_iife_depth, 0);
+        a.visit_children_with(self);
+        self.zts_iife_depth = saved;
+        self.fn_depth -= 1;
+    }
+
+    fn visit_zts_expr_block(&mut self, b: &ZtsExprBlock) {
+        self.zts_iife_depth += 1;
+        b.visit_children_with(self);
+        self.zts_iife_depth -= 1;
     }
 
     fn visit_match_expr(&mut self, m: &MatchExpr) {

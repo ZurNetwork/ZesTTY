@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_try_in_match_arm.zts
+---
+error: `?` inside a match arm or if-expression block is not supported in v1: the construct lowers to an IIFE, which would hijack the early return
+ --> tests/fixtures/errors/err_try_in_match_arm.zts:8:17
+  |
+8 |       const v = r?;
+  |                 ^^

@@ -30,6 +30,25 @@ type Meters = number & {
     readonly __ztsNewtype: "Meters";
 };
 const Meters = (value: number): Meters =>value as Meters;
+// Phase 5: `?` try operator — Ok unwraps, Err propagates, bare form
+// discards the value but still propagates.
+type NumRes = {
+    kind: "Ok";
+    value: number;
+} | {
+    kind: "Err";
+    error: string;
+};
+const NumRes = {
+    Ok: (value: number): NumRes =>({
+            kind: "Ok",
+            value
+        }),
+    Err: (error: string): NumRes =>({
+            kind: "Err",
+            error
+        })
+};
 // Executed by tests/tsc_exit.rs under node: every zts construct here must
 // produce the RIGHT VALUE at runtime, not merely typecheck. Guards against
 // precedence miscompiles that tsc cannot see.
@@ -135,4 +154,62 @@ expect("variant wildcard side effect", wildSide, 1);
 const m = Meters(5);
 expect("newtype identity", m, 5);
 expect("newtype arithmetic", m + 1, 6);
+let bareRan = 0;
+function tryDouble(r: NumRes, gate: NumRes): NumRes {
+    const __t = gate;
+    if (__t.kind === "Err") {
+        return __t;
+    }
+    bareRan += 1;
+    const __t1 = r;
+    if (__t1.kind === "Err") {
+        return __t1;
+    }
+    const n = __t1.value;
+    return NumRes.Ok(n * 2);
+}
+const okd = tryDouble(NumRes.Ok(21), NumRes.Ok(0));
+const okv = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Ok") {
+        const { value } = __m;
+        return value;
+    }
+    if (__k === "Err") {
+        const { error } = __m;
+        return error.length;
+    }
+    return __ztsAbsurd(__k);
+})(okd);
+expect("try ok", okv, 42);
+expect("try bare ran", bareRan, 1);
+const erd = tryDouble(NumRes.Err("nope"), NumRes.Ok(0));
+const erv = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Ok") {
+        const { value } = __m;
+        return `${value}`;
+    }
+    if (__k === "Err") {
+        const { error } = __m;
+        return error;
+    }
+    return __ztsAbsurd(__k);
+})(erd);
+expect("try err propagates", erv, "nope");
+const gated = tryDouble(NumRes.Ok(1), NumRes.Err("gate"));
+const gv = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Ok") {
+        const { value } = __m;
+        return `${value}`;
+    }
+    if (__k === "Err") {
+        const { error } = __m;
+        return error;
+    }
+    return __ztsAbsurd(__k);
+})(gated);
+expect("try bare-stmt propagates", gv, "gate");
+expect("try bare-stmt short-circuits", bareRan, 2);
 console.log("exec_semantics: all assertions passed");

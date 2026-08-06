@@ -1,0 +1,12 @@
+type T = { kind: "A"; r: { kind: "Ok"; value: number } | { kind: "Err"; error: string } };
+
+declare const t: T;
+
+function use(): number {
+  return match (t) {
+    A { r } => {
+      const v = r?;
+      v
+    },
+  };
+}

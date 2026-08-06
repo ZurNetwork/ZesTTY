@@ -1,0 +1,12 @@
+import { type Result, Ok } from "@zestty/core";
+
+declare function parsePort(raw: string): Result<number, string>;
+
+// Compiles in zts; tsc must reject it — the propagated Err<string> is not
+// assignable to Result<number, { code: number }>.
+function boot(raw: string): Result<number, { code: number }> {
+  const port = parsePort(raw)?;
+  return Ok(port);
+}
+
+console.log(boot("8080"));

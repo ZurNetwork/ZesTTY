@@ -1,0 +1,22 @@
+import { type Result, Ok, Err } from "@zestty/core";
+
+function divide(a: number, b: number): Result<number, string> {
+  return if (b === 0) { Err("division by zero") } else { Ok(a / b) };
+}
+
+// All three sanctioned v1 forms: const-init, bare statement, return.
+function halveTwice(n: number): Result<number, string> {
+  const once = divide(n, 2)?;
+  divide(once, 2)?;
+  const twice = divide(once, 2)?;
+  return Ok(twice);
+}
+
+declare function nested(n: number): Result<Result<number, string>, string>;
+
+function chain(n: number): Result<number, string> {
+  // `return e?;` — the unwrapped Ok value must satisfy the return type.
+  return nested(n)?;
+}
+
+console.log(halveTwice(8), chain(4));

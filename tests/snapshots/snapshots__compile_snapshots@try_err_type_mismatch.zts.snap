@@ -1,0 +1,20 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/try_err_type_mismatch.zts
+---
+import { type Result, Ok } from "@zestty/core";
+declare function parsePort(raw: string): Result<number, string>;
+// Compiles in zts; tsc must reject it — the propagated Err<string> is not
+// assignable to Result<number, { code: number }>.
+function boot(raw: string): Result<number, {
+    code: number;
+}> {
+    const __t = parsePort(raw);
+    if (__t.kind === "Err") {
+        return __t;
+    }
+    const port = __t.value;
+    return Ok(port);
+}
+console.log(boot("8080"));

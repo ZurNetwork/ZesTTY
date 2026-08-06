@@ -57,6 +57,20 @@
 //!   body becomes the fall-through), which deliberately disables the
 //!   exhaustiveness keystone — that is the semantics the author asked for.
 //!
+//! The `?` try operator lowers at STATEMENT level (semantic checking has
+//! already confined it to whole-RHS forms inside real function bodies):
+//!
+//! ```ts
+//! const x = f()?;          //  =>  const __t = f();
+//!                          //      if (__t.kind === "Err") { return __t; }
+//!                          //      const x = __t.value;
+//! ```
+//!
+//! `return e?;` ends in `return __t.value;`; a bare `e?;` just drops the
+//! value. tsc enforces the safety property on the shape alone: `.kind`
+//! comparison fails on non-Results, and `return __t` fails unless the
+//! enclosing return type accepts the `Err` side.
+//!
 //! Original spans are preserved on every node that has a source
 //! counterpart; only glue (the IIFE scaffolding identifiers) is synthetic.
 //! Generated identifiers get a fresh `Mark`, and the `hygiene()` pass that
@@ -588,7 +602,130 @@ fn build_if_iife(i: ZtsIfExpr) -> Expr {
     })
 }
 
+/// Does this statement carry a sanctioned top-level `?`? (Mirror of the
+/// semantic pass's shape rule; anything else was already rejected.)
+fn stmt_has_top_try(s: &Stmt) -> bool {
+    match s {
+        Stmt::Decl(Decl::Var(v)) if v.decls.len() == 1 => {
+            matches!(v.decls[0].init.as_deref(), Some(Expr::ZtsTry(..)))
+        }
+        Stmt::Return(r) => matches!(r.arg.as_deref(), Some(Expr::ZtsTry(..))),
+        Stmt::Expr(e) => matches!(&*e.expr, Expr::ZtsTry(..)),
+        _ => false,
+    }
+}
+
+/// `const __t = <operand>; if (__t.kind === "Err") { return __t; }`
+/// Returns the prelude plus the `__t` ident (fresh mark per use).
+fn try_prelude(t: ZtsTryExpr) -> (Vec<Stmt>, Ident) {
+    let ZtsTryExpr { span, expr } = t;
+    let t_ident = private_ident!("__t");
+    let operand_span = expr.span();
+
+    let decl: Stmt = VarDecl {
+        span: operand_span,
+        ctxt: SyntaxContext::empty(),
+        kind: VarDeclKind::Const,
+        declare: false,
+        decls: vec![VarDeclarator {
+            span: operand_span,
+            name: Pat::Ident(t_ident.clone().into()),
+            init: Some(expr),
+            definite: false,
+        }],
+    }
+    .into();
+
+    let test = Expr::Bin(BinExpr {
+        span,
+        op: BinaryOp::EqEqEq,
+        left: Box::new(Expr::Member(MemberExpr {
+            span,
+            obj: Box::new(Expr::Ident(t_ident.clone())),
+            prop: MemberProp::Ident(IdentName::new(atom!("kind"), span)),
+        })),
+        right: Box::new(Expr::Lit(Lit::Str(Str {
+            span,
+            value: atom!("Err").into(),
+            raw: None,
+        }))),
+    });
+    let guard = Stmt::If(IfStmt {
+        span,
+        test: Box::new(test),
+        cons: Box::new(Stmt::Block(BlockStmt {
+            span,
+            ctxt: SyntaxContext::empty(),
+            stmts: vec![Stmt::Return(ReturnStmt {
+                span,
+                arg: Some(Box::new(Expr::Ident(t_ident.clone()))),
+            })],
+        })),
+        alt: None,
+    });
+
+    (vec![decl, guard], t_ident)
+}
+
+/// `__t.value`
+fn try_value(t_ident: &Ident, span: Span) -> Expr {
+    Expr::Member(MemberExpr {
+        span,
+        obj: Box::new(Expr::Ident(t_ident.clone())),
+        prop: MemberProp::Ident(IdentName::new(atom!("value"), span)),
+    })
+}
+
 impl VisitMut for Lower {
+    fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
+        // Children first: matches/if-exprs inside try operands (and
+        // everything else) are already vanilla TS by the time the
+        // statement expands.
+        stmts.visit_mut_children_with(self);
+
+        if !stmts.iter().any(stmt_has_top_try) {
+            return;
+        }
+
+        let mut out: Vec<Stmt> = Vec::with_capacity(stmts.len() + 2);
+        for stmt in stmts.drain(..) {
+            match stmt {
+                Stmt::Decl(Decl::Var(mut v))
+                    if v.decls.len() == 1
+                        && matches!(v.decls[0].init.as_deref(), Some(Expr::ZtsTry(..))) =>
+                {
+                    let Some(Expr::ZtsTry(t)) = v.decls[0].init.take().map(|b| *b) else {
+                        unreachable!()
+                    };
+                    let try_span = t.span;
+                    let (prelude, t_ident) = try_prelude(t);
+                    out.extend(prelude);
+                    v.decls[0].init = Some(Box::new(try_value(&t_ident, try_span)));
+                    out.push(Stmt::Decl(Decl::Var(v)));
+                }
+                Stmt::Return(mut r) if matches!(r.arg.as_deref(), Some(Expr::ZtsTry(..))) => {
+                    let Some(Expr::ZtsTry(t)) = r.arg.take().map(|b| *b) else {
+                        unreachable!()
+                    };
+                    let try_span = t.span;
+                    let (prelude, t_ident) = try_prelude(t);
+                    out.extend(prelude);
+                    r.arg = Some(Box::new(try_value(&t_ident, try_span)));
+                    out.push(Stmt::Return(r));
+                }
+                Stmt::Expr(e) if matches!(&*e.expr, Expr::ZtsTry(..)) => {
+                    let Expr::ZtsTry(t) = *e.expr else {
+                        unreachable!()
+                    };
+                    let (prelude, _) = try_prelude(t);
+                    out.extend(prelude);
+                }
+                other => out.push(other),
+            }
+        }
+        *stmts = out;
+    }
+
     fn visit_mut_expr(&mut self, e: &mut Expr) {
         // Children first: nested constructs lower bottom-up. Note that
         // else-if links and arm-body blocks are NOT `Expr` children — the

@@ -1,0 +1,8 @@
+// Compiles in zts; tsc must reject it — `?` on a non-Result has no `kind`
+// property to test (TS2339 on the generated `__t.kind`).
+function bad(): number {
+  const x = 5?;
+  return x;
+}
+
+console.log(bad());
