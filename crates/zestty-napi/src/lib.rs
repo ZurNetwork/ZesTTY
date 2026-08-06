@@ -25,6 +25,9 @@ pub struct CompileOptions {
     pub decorators: Option<bool>,
     /// Embed original source text in the sourcemap. Default true.
     pub inline_sources_content: Option<bool>,
+    /// Import `__ztsAbsurd` from @zestty/core instead of emitting the
+    /// per-file helper (committed-twins mode). Default false.
+    pub preamble_import: Option<bool>,
 }
 
 const COMPILE_STACK_SIZE: usize = 64 * 1024 * 1024;
@@ -43,6 +46,7 @@ pub fn compile(
         inline_sources_content: options
             .inline_sources_content
             .unwrap_or(defaults.inline_sources_content),
+        preamble_import: options.preamble_import.unwrap_or(defaults.preamble_import),
     };
 
     let handle = std::thread::Builder::new()

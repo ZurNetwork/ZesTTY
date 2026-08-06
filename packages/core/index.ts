@@ -138,3 +138,17 @@ export function ResultPipe<T, E>(r: Result<T, E>): ResultPipe<T, E> {
     unwrap_or: (fallback) => unwrap_or(r, fallback),
   };
 }
+
+/**
+ * The exhaustiveness keystone the zts compiler references in
+ * committed-twins mode (`import { __ztsAbsurd } from "@zestty/core"`).
+ * Not for application code: if this ever throws, a `match` was compiled
+ * against a stale type. The unmatched value rides on `ztsTag` —
+ * deliberately NOT `kind`, so the thrown object can never impersonate a
+ * domain tagged union in a `catch`.
+ */
+export function __ztsAbsurd(x: never): never {
+  throw Object.assign(new globalThis.Error("zts: non-exhaustive match"), {
+    ztsTag: x,
+  });
+}

@@ -37,6 +37,12 @@ pub struct Options {
     pub tsx: bool,
     /// Parse decorators. On by default — they are load-bearing TS.
     pub decorators: bool,
+    /// Emit `import { __ztsAbsurd } from "@zestty/core";` instead of the
+    /// per-file helper (issue #37). Off by default: napi/Vite/LSP consumers
+    /// may not depend on @zestty/core; committed-twins mode turns it on.
+    /// Scripts (non-modules) always keep the inline helper — they cannot
+    /// import.
+    pub preamble_import: bool,
     /// Embed the original source text in the sourcemap. On for dev;
     /// build pipelines shipping maps publicly should turn it off.
     pub inline_sources_content: bool,
@@ -47,6 +53,7 @@ impl Default for Options {
         Options {
             tsx: false,
             decorators: true,
+            preamble_import: false,
             inline_sources_content: true,
         }
     }
@@ -138,7 +145,7 @@ pub fn compile(
         let unresolved_mark = Mark::new();
         let top_level_mark = Mark::new();
         program.mutate(resolver(unresolved_mark, top_level_mark, true));
-        program.mutate(lower::lower());
+        program.mutate(lower::lower(opts.preamble_import));
         program.mutate(hygiene());
         // fixer LAST (swc's canonical order): stock codegen does not compute
         // parenthesization from precedence — without this pass, a lowered

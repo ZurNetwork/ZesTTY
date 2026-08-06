@@ -82,14 +82,20 @@ use swc_ecma_ast::*;
 use swc_ecma_utils::private_ident;
 use swc_ecma_visit::{VisitMut, VisitMutWith, visit_mut_pass};
 
-pub fn lower() -> impl Pass {
-    visit_mut_pass(Lower { absurd: None })
+pub fn lower(preamble_import: bool) -> impl Pass {
+    visit_mut_pass(Lower {
+        absurd: None,
+        preamble_import,
+    })
 }
 
 struct Lower {
     /// The `__ztsAbsurd` identifier, created on first use; its presence
     /// also signals that the helper declaration must be injected.
     absurd: Option<Ident>,
+    /// Import the helper from @zestty/core instead of emitting it inline
+    /// (committed-twins mode). Scripts always inline — they cannot import.
+    preamble_import: bool,
 }
 
 /// Append an arm body as trailing statements: a block body splices its
@@ -271,8 +277,10 @@ impl Lower {
 
         let mut cons_stmts: Vec<Stmt> = Vec::with_capacity(2);
 
-        // const { bindings } = __m;
-        if let Some(binding) = binding {
+        // const { bindings } = __m; — skipped entirely for a bindingless
+        // arm (`Ok {} =>`): `const {} = __m;` is an eslint error
+        // (no-empty-pattern) in committed twins (issue #38).
+        if let Some(binding) = binding.filter(|b| !b.props.is_empty()) {
             let binding_span = binding.span;
             cons_stmts.push(
                 VarDecl {
@@ -363,7 +371,6 @@ impl Lower {
     /// `globalThis.Error` and `ztsTag` are both deliberate — see module docs.
     fn absurd_decl(&self, absurd: Ident) -> Stmt {
         let x = private_ident!("x");
-        let e = private_ident!("e");
 
         let keyword_ann = |kind: TsKeywordTypeKind| {
             Box::new(TsTypeAnn {
@@ -375,7 +382,7 @@ impl Lower {
             })
         };
 
-        // const e: any = new globalThis.Error("zts: non-exhaustive match");
+        // new globalThis.Error("zts: non-exhaustive match")
         let new_error = Expr::New(NewExpr {
             span: DUMMY_SP,
             ctxt: SyntaxContext::empty(),
@@ -397,40 +404,50 @@ impl Lower {
             }]),
             type_args: None,
         });
-        let decl_e = Stmt::from(VarDecl {
+        // throw globalThis.Object.assign(new globalThis.Error(...), { ztsTag: x });
+        //
+        // Object.assign keeps the thrown value a real Error while attaching
+        // the tag WITHOUT an `any` (issue #36: the old `const e: any` was
+        // the emitted code's only `any`, forcing downstream lint exemptions
+        // over every committed twin). globalThis.Object, never bare Object
+        // — hygiene is not TS-type-aware.
+        let assign_call = Expr::Call(CallExpr {
             span: DUMMY_SP,
             ctxt: SyntaxContext::empty(),
-            kind: VarDeclKind::Const,
-            declare: false,
-            decls: vec![VarDeclarator {
+            callee: Callee::Expr(Box::new(Expr::Member(MemberExpr {
                 span: DUMMY_SP,
-                name: Pat::Ident(BindingIdent {
-                    id: e.clone(),
-                    type_ann: Some(keyword_ann(TsKeywordTypeKind::TsAnyKeyword)),
-                }),
-                init: Some(Box::new(new_error)),
-                definite: false,
-            }],
-        });
-
-        // e.ztsTag = x;
-        let set_tag = Stmt::Expr(ExprStmt {
-            span: DUMMY_SP,
-            expr: Box::new(Expr::Assign(AssignExpr {
-                span: DUMMY_SP,
-                op: AssignOp::Assign,
-                left: AssignTarget::Simple(SimpleAssignTarget::Member(MemberExpr {
+                obj: Box::new(Expr::Member(MemberExpr {
                     span: DUMMY_SP,
-                    obj: Box::new(Expr::Ident(e.clone())),
-                    prop: MemberProp::Ident(IdentName::new(atom!("ztsTag"), DUMMY_SP)),
+                    obj: Box::new(Expr::Ident(Ident::new_no_ctxt(
+                        atom!("globalThis"),
+                        DUMMY_SP,
+                    ))),
+                    prop: MemberProp::Ident(IdentName::new(atom!("Object"), DUMMY_SP)),
                 })),
-                right: Box::new(Expr::Ident(x.clone())),
-            })),
+                prop: MemberProp::Ident(IdentName::new(atom!("assign"), DUMMY_SP)),
+            }))),
+            args: vec![
+                ExprOrSpread {
+                    spread: None,
+                    expr: Box::new(new_error),
+                },
+                ExprOrSpread {
+                    spread: None,
+                    expr: Box::new(Expr::Object(ObjectLit {
+                        span: DUMMY_SP,
+                        props: vec![PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
+                            key: PropName::Ident(IdentName::new(atom!("ztsTag"), DUMMY_SP)),
+                            value: Box::new(Expr::Ident(x.clone())),
+                        })))],
+                    })),
+                },
+            ],
+            type_args: None,
         });
 
         let throw = Stmt::Throw(ThrowStmt {
             span: DUMMY_SP,
-            arg: Box::new(Expr::Ident(e)),
+            arg: Box::new(assign_call),
         });
 
         Stmt::Decl(Decl::Fn(FnDecl {
@@ -451,7 +468,7 @@ impl Lower {
                 body: Some(BlockStmt {
                     span: DUMMY_SP,
                     ctxt: SyntaxContext::empty(),
-                    stmts: vec![decl_e, set_tag, throw],
+                    stmts: vec![throw],
                 }),
                 is_generator: false,
                 is_async: false,
@@ -853,10 +870,41 @@ impl VisitMut for Lower {
         module.visit_mut_children_with(self);
 
         if let Some(absurd) = self.absurd.take() {
-            let idx = helper_insert_index(&module.body);
-            module
-                .body
-                .insert(idx, ModuleItem::Stmt(self.absurd_decl(absurd)));
+            if self.preamble_import {
+                // import { __ztsAbsurd } from "@zestty/core"; — same ident
+                // (same mark), so hygiene treats it exactly like the decl.
+                let idx = helper_insert_index(&module.body);
+                module.body.insert(
+                    idx,
+                    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+                        span: DUMMY_SP,
+                        specifiers: vec![ImportSpecifier::Named(ImportNamedSpecifier {
+                            span: DUMMY_SP,
+                            local: absurd,
+                            // No explicit `imported`: the local IS the
+                            // exported name, and `Some` would emit a
+                            // redundant `as` alias. (User `__zts*` idents
+                            // are rejected by semantic F9, so hygiene never
+                            // needs to rename this local.)
+                            imported: None,
+                            is_type_only: false,
+                        })],
+                        src: Box::new(Str {
+                            span: DUMMY_SP,
+                            value: atom!("@zestty/core").into(),
+                            raw: None,
+                        }),
+                        type_only: false,
+                        with: None,
+                        phase: Default::default(),
+                    })),
+                );
+            } else {
+                let idx = helper_insert_index(&module.body);
+                module
+                    .body
+                    .insert(idx, ModuleItem::Stmt(self.absurd_decl(absurd)));
+            }
         }
     }
 

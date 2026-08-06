@@ -91,11 +91,18 @@ const area = match (shape) {
 Lowers to:
 
 ```ts
-// generated TS (helper injected once per module, after directives+imports)
+// generated TS (helper injected once per module, after directives+imports;
+// any-free so linted twins need no exemptions. In committed-twins mode the
+// helper is imported from @zestty/core instead — one definition, no
+// per-file boilerplate; `zts-check --twins --inline-preamble` restores the
+// standalone form.)
 function __ztsAbsurd(x: never): never {
-  const e: any = new globalThis.Error("zts: non-exhaustive match");
-  e.ztsTag = x;
-  throw e;
+  throw globalThis.Object.assign(
+    new globalThis.Error("zts: non-exhaustive match"),
+    {
+      ztsTag: x,
+    },
+  );
 }
 
 const area = ((__m) => {

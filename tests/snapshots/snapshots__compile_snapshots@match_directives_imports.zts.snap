@@ -7,9 +7,9 @@ input_file: tests/fixtures/match_directives_imports.zts
 "use strict";
 import type { Whatever } from "./elsewhere";
 function __ztsAbsurd(x: never): never {
-    const e: any = new globalThis.Error("zts: non-exhaustive match");
-    e.ztsTag = x;
-    throw e;
+    throw globalThis.Object.assign(new globalThis.Error("zts: non-exhaustive match"), {
+        ztsTag: x
+    });
 }
 type T = {
     kind: "K";
