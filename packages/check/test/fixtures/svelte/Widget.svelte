@@ -2,7 +2,7 @@
 
 <script lang="zts">
   type State = { kind: "A"; n: number } | { kind: "B"; s: string };
-  declare const st: State;
+  const st: State = { kind: "A", n: 1 } as State;
 
   export const label = match (st) {
     A { n } => `${n}`,

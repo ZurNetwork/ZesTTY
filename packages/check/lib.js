@@ -1,5 +1,6 @@
 import { compile } from "@zestty/native";
 import { SourceMapConsumer } from "source-map-js";
+import { buildShadow, runSvelteCheck } from "./shadow.js";
 import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
@@ -64,7 +65,7 @@ function stripMapComment(code) {
  * - identical content (modulo sourceMappingURL) → reuse, don't touch;
  * - different content → that's a STALE TWIN, reported as an error.
  */
-export function materialize(root) {
+export function materialize(root, { svelteScriptTwins = true } = {}) {
   const { zts, svelte } = scan(root);
   const twins = []; // { twinPath, mapJson, originalPath, created, scriptOffset }
   const errors = [];
@@ -107,7 +108,7 @@ export function materialize(root) {
     });
   }
 
-  for (const file of svelte) {
+  for (const file of svelteScriptTwins ? svelte : []) {
     const source = readFileSync(file, "utf8");
     // ALL lang="zts" blocks (instance + context="module"), not just the first.
     let index = 0;
@@ -333,8 +334,13 @@ function removeManifest(root) {
   rmSync(join(root, MANIFEST_DIR), { recursive: true, force: true });
 }
 
+const HAS_ZTS_SCRIPT = /<script[^>]*\blang\s*=\s*["']zts["']/;
+
 /** Full run. Returns an exit code. */
-export function ztsCheck(root, { keep = false, log = console.error } = {}) {
+export function ztsCheck(
+  root,
+  { keep = false, svelte = true, log = console.error } = {},
+) {
   root = resolve(root);
   if (!existsSync(root)) {
     log(`zts-check: no such directory: ${root}`);
@@ -342,6 +348,16 @@ export function ztsCheck(root, { keep = false, log = console.error } = {}) {
   }
 
   recoverLeaks(root, log);
+
+  // Template checking: when svelte-check is available, components are
+  // checked WHOLE (template bindings included) over a shadow tree, and the
+  // script-twin path is skipped for them to avoid double-reporting.
+  const ztsComponents = svelte
+    ? scan(root).svelte.filter((f) =>
+        HAS_ZTS_SCRIPT.test(readFileSync(f, "utf8")),
+      )
+    : [];
+  const useShadow = ztsComponents.length > 0;
 
   let twins = [];
   let errorCount = 0;
@@ -356,7 +372,7 @@ export function ztsCheck(root, { keep = false, log = console.error } = {}) {
   for (const sig of SIGNALS) process.on(sig, onSignal);
 
   try {
-    const materialized = materialize(root);
+    const materialized = materialize(root, { svelteScriptTwins: !useShadow });
     twins = materialized.twins;
     writeManifest(root, twins);
 
@@ -365,25 +381,65 @@ export function ztsCheck(root, { keep = false, log = console.error } = {}) {
       log(`${relative(root, e.file)}: ${e.message}`);
     }
 
-    if (twins.length === 0) {
+    if (twins.length === 0 && !useShadow) {
       if (errorCount === 0) log("zts-check: nothing to check");
       return errorCount === 0 ? 0 : 1;
     }
 
-    const { failed, diagnostics } = runCheck(root, twins);
-    for (const d of diagnostics) {
-      if (d.raw != null) {
-        errorCount += /error TS\d+/.test(d.raw) ? 1 : 0;
-        log(d.raw);
-      } else {
+    if (twins.length > 0) {
+      const { failed, diagnostics } = runCheck(root, twins);
+      for (const d of diagnostics) {
+        if (d.raw != null) {
+          errorCount += /error TS\d+/.test(d.raw) ? 1 : 0;
+          log(d.raw);
+        } else {
+          errorCount += 1;
+          log(`${relative(root, d.file)}(${d.line},${d.column}): ${d.message}`);
+        }
+      }
+      if (failed && errorCount === 0) {
+        // tsc failed without parseable diagnostics — surface that loudly.
         errorCount += 1;
-        log(`${relative(root, d.file)}(${d.line},${d.column}): ${d.message}`);
+        log("zts-check: tsc exited non-zero without diagnostics");
       }
     }
-    if (failed && errorCount === 0) {
-      // tsc failed without parseable diagnostics — surface that loudly.
-      errorCount += 1;
-      log("zts-check: tsc exited non-zero without diagnostics");
+
+    if (useShadow) {
+      const shadowDir = join(root, MANIFEST_DIR, "shadow");
+      // Shadow compile errors duplicate the module-twin errors already
+      // reported above; components-only errors surface via svelte-check.
+      const { components } = buildShadow(root, shadowDir);
+      const svelteDiags = runSvelteCheck(root, shadowDir, components);
+      if (svelteDiags == null) {
+        // Script twins were skipped in anticipation — fall back so the
+        // scripts are still checked, and say what was NOT checked.
+        log(
+          'zts-check: svelte-check not found — template bindings in lang="zts" components were NOT checked (scripts still are; install svelte-check for full coverage)',
+        );
+        const fallback = materialize(root, { svelteScriptTwins: true });
+        const scriptTwins = fallback.twins.filter((t) =>
+          t.originalPath.endsWith(".svelte"),
+        );
+        twins.push(...scriptTwins);
+        const { diagnostics } = runCheck(root, scriptTwins);
+        for (const d of diagnostics) {
+          if (d.raw != null) {
+            errorCount += /error TS\d+/.test(d.raw) ? 1 : 0;
+            log(d.raw);
+          } else {
+            errorCount += 1;
+            log(
+              `${relative(root, d.file)}(${d.line},${d.column}): ${d.message}`,
+            );
+          }
+        }
+      } else {
+        for (const d of svelteDiags) {
+          errorCount += 1;
+          log(`${relative(root, d.file)}(${d.line},${d.column}): ${d.message}`);
+        }
+      }
+      if (!keep) rmSync(shadowDir, { recursive: true, force: true });
     }
   } finally {
     for (const sig of SIGNALS) process.off(sig, onSignal);

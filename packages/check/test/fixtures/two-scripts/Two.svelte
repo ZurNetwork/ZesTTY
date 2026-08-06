@@ -4,7 +4,7 @@
 
 <script lang="zts">
   type T = { kind: "K"; v: number } | { kind: "L"; w: number };
-  declare const t: T;
+  const t: T = { kind: "K", v: 1 } as T;
   export const broken = match (t) {
     K { v } => v,
   };

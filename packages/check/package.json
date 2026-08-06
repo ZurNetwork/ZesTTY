@@ -8,7 +8,8 @@
   },
   "main": "lib.js",
   "exports": {
-    ".": "./lib.js"
+    ".": "./lib.js",
+    "./shadow": "./shadow.js"
   },
   "scripts": {
     "test": "node --test test/*.test.js"
@@ -19,5 +20,10 @@
   },
   "peerDependencies": {
     "typescript": ">=5"
+  },
+  "devDependencies": {
+    "svelte": "^5.56.8",
+    "svelte-check": "^4.7.4",
+    "typescript": "^5.9.3"
   }
 }
