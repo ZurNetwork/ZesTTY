@@ -395,6 +395,15 @@ fn exported_union_passes_tsc_and_stays_exported() {
 }
 
 #[test]
+fn union_guard_is_es5_clean() {
+    // Review finding 3: has() must not raise the emitted-TS lib floor
+    // (`includes` is ES2016). indexOf keeps the guard ES5-clean.
+    let (ts_path, _) = compile_to("union_basic.zts", "exit_union_es2015.ts");
+    let (ok, text) = tsc_with(&ts_path, &["--strict", "--target", "es2015"]);
+    assert!(ok, "union guard must typecheck at --target es2015:\n{text}");
+}
+
+#[test]
 fn union_missing_arm_fails_tsc_naming_the_literal() {
     let (ts_path, _) = compile_to("union_missing_arm.zts", "exit_union_missing.ts");
     let (ok, text) = tsc_with(&ts_path, &[]);

@@ -327,7 +327,7 @@ fn lower_newtype(n: &ZtsNewtypeDecl) -> (Decl, Decl) {
 /// const Level = {
 ///     values: ['info', 'warn'] as const,
 ///     has: (__ztsRaw: string): __ztsRaw is Level =>
-///         (Level.values as readonly string[]).includes(__ztsRaw),
+///         Level.values.indexOf(__ztsRaw as Level) !== -1,
 /// };
 /// ```
 fn lower_union(u: &ZtsUnionDecl) -> (Decl, Decl) {
@@ -393,14 +393,16 @@ fn lower_union(u: &ZtsUnionDecl) -> (Decl, Decl) {
         })),
     });
 
-    // Name.values.includes(__ztsRaw as Name)
+    // Name.values.indexOf(__ztsRaw as Name) !== -1
     //
-    // The cast rides on the ARGUMENT, not the receiver: a receiver cast
-    // (`(values as readonly string[]).includes`) needs parens that the
-    // paren-stripping fixer removes (miscompile), and `includes` on the
-    // as-const tuple wants the member union anyway.
+    // indexOf, not includes: includes is ES2016 and would make has() the
+    // only lowering that raises the emitted-TS lib floor (review finding
+    // 3); indexOf is ES5-clean. The cast rides on the ARGUMENT, not the
+    // receiver: a receiver cast (`(values as ...).indexOf`) needs parens
+    // that the paren-stripping fixer removes (miscompile), and indexOf on
+    // the as-const tuple wants the member union anyway.
     let raw_ident = Ident::new_no_ctxt(atom!("__ztsRaw"), u.span);
-    let includes_call = Expr::Call(CallExpr {
+    let index_of_call = Expr::Call(CallExpr {
         span: u.span,
         ctxt: SyntaxContext::empty(),
         callee: Callee::Expr(Box::new(Expr::Member(MemberExpr {
@@ -410,7 +412,7 @@ fn lower_union(u: &ZtsUnionDecl) -> (Decl, Decl) {
                 obj: Box::new(Expr::Ident(u.ident.clone())),
                 prop: MemberProp::Ident(IdentName::new(atom!("values"), u.span)),
             })),
-            prop: MemberProp::Ident(IdentName::new(atom!("includes"), u.span)),
+            prop: MemberProp::Ident(IdentName::new(atom!("indexOf"), u.span)),
         }))),
         args: vec![ExprOrSpread {
             spread: None,
@@ -421,6 +423,20 @@ fn lower_union(u: &ZtsUnionDecl) -> (Decl, Decl) {
             })),
         }],
         type_args: None,
+    });
+    let includes_call = Expr::Bin(BinExpr {
+        span: u.span,
+        op: BinaryOp::NotEqEq,
+        left: Box::new(index_of_call),
+        right: Box::new(Expr::Unary(UnaryExpr {
+            span: u.span,
+            op: UnaryOp::Minus,
+            arg: Box::new(Expr::Lit(Lit::Num(Number {
+                span: u.span,
+                value: 1.0,
+                raw: None,
+            }))),
+        })),
     });
 
     // (__ztsRaw: string): __ztsRaw is Name => ...

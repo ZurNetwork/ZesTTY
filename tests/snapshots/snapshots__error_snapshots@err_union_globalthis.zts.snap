@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_union_globalthis.zts
+---
+error: declaring a binding named `globalThis` is not supported in a module that uses `match` (the generated exhaustiveness helper references `globalThis.Error`)
+ --> tests/fixtures/errors/err_union_globalthis.zts:1:7
+  |
+1 | union globalThis = 'a' | 'b';
+  |       ^^^^^^^^^^

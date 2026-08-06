@@ -16,7 +16,7 @@ const DeleteOutcome = {
         'hard',
         'unknown'
     ] as const,
-    has: (__ztsRaw: string): __ztsRaw is DeleteOutcome =>DeleteOutcome.values.includes(__ztsRaw as DeleteOutcome)
+    has: (__ztsRaw: string): __ztsRaw is DeleteOutcome =>DeleteOutcome.values.indexOf(__ztsRaw as DeleteOutcome) !== -1
 };
 // The wire-normalizer nuisance this kills: has() narrows, no hand-listed
 // literals, and the wildcard is the R8 fail-closed fallback.

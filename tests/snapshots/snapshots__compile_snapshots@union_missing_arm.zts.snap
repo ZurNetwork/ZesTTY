@@ -16,7 +16,7 @@ const Level = {
         'warn',
         'error'
     ] as const,
-    has: (__ztsRaw: string): __ztsRaw is Level =>Level.values.includes(__ztsRaw as Level)
+    has: (__ztsRaw: string): __ztsRaw is Level =>Level.values.indexOf(__ztsRaw as Level) !== -1
 };
 declare const l: Level;
 const rank = ((__m)=>{

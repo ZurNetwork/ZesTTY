@@ -1,0 +1,1 @@
+union __ztsRaw = 'a' | 'b';

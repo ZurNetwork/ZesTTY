@@ -3,7 +3,7 @@ source: tests/snapshots.rs
 expression: diags
 input_file: tests/fixtures/errors/err_dup_zts_names.zts
 ---
-error: duplicate zts declaration `A` in this scope (each enum/newtype expands to a type alias AND a const of that name)
+error: duplicate zts declaration `A` in this scope (each enum/newtype/union expands to a type alias AND a const of that name)
  --> tests/fixtures/errors/err_dup_zts_names.zts:3:6
   |
 3 | enum A {

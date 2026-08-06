@@ -10,7 +10,7 @@ export const Level = {
         'warn',
         'error'
     ] as const,
-    has: (__ztsRaw: string): __ztsRaw is Level =>Level.values.includes(__ztsRaw as Level)
+    has: (__ztsRaw: string): __ztsRaw is Level =>Level.values.indexOf(__ztsRaw as Level) !== -1
 };
 // Hoisting: use-before-declaration works, and export covers both halves.
 const early = Level.has('warn');
