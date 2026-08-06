@@ -105,7 +105,13 @@ export class ZtsProject {
       error: null,
     };
     try {
-      const out = compile(text, path, { tsx: path.endsWith(".ztsx") });
+      // Virtual twins keep the inline preamble (issue #47): they never
+      // ship (no memory cost), and tsserver would otherwise report a
+      // missing @zestty/core in workspaces that don't depend on it.
+      const out = compile(text, path, {
+        tsx: path.endsWith(".ztsx"),
+        preambleImport: false,
+      });
       if (out.code !== doc.twin) {
         doc.twin = out.code;
         doc.twinVersion += 1;

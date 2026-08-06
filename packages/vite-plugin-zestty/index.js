@@ -11,7 +11,7 @@ const ZTS_RE = /\.ztsx?$/;
  * in as `inMap` so the composed map points all the way back to the `.zts`
  * source — breakpoints set in `.zts` bind in devtools.
  *
- * @param {{ decorators?: boolean }} [options]
+ * @param {{ decorators?: boolean, inlinePreamble?: boolean }} [options]
  * @returns {import("vite").Plugin}
  */
 export default function zts(options = {}) {
@@ -37,6 +37,11 @@ export default function zts(options = {}) {
           tsx: file.endsWith(".ztsx"),
           decorators: options.decorators,
           inlineSourcesContent: !isProduction,
+          // Default (issue #47): import the one shared __ztsAbsurd from
+          // @zestty/core — vite dedupes it across the bundle. Set
+          // `inlinePreamble: true` to keep the per-module helper and drop
+          // the @zestty/core dependency.
+          ...(options.inlinePreamble ? { preambleImport: false } : {}),
         });
       } catch (err) {
         // Rendered zts diagnostics → vite error overlay. Rollup's

@@ -28,7 +28,8 @@ Read README.md before doing anything — it is the authoritative spec: locked fe
 
 ## Locked rules (from README — non-negotiable)
 
-- Scope: the four locked features (`match`, `Result` library, enums-with-data, expression `if`) plus Zuri-approved additions (`not` prefix sugar, 2026-08-06). Anything else on the deferred list needs Zuri's explicit go-ahead.
+- Scope: the four locked features (`match`, `Result` library, enums-with-data, expression `if`) plus Zuri-approved additions (`not` prefix sugar; newtypes + `?` in Phase 5; `union`; traits + universal absurd approved 2026-08-06 as Phase 6 — see README). Anything else on the deferred list needs Zuri's explicit go-ahead.
+- The type-plane rule (README, Conventions) governs all new features: guarantees live in emitted types, decisions from syntax alone, tsc is the oracle.
 - Discriminant field is `kind` (string literal), everywhere. `kind` is a reserved field name in enum variants.
 - Never emit TypeScript `enum` — tagged unions + factory functions only. TS `enum` member syntax in zts source is a hard error.
 - Lowering happens BEFORE codegen. Codegen arms for custom AST nodes are `unreachable!("must be lowered before emit")` — a codegen panic means a lowering bug.

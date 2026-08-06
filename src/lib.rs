@@ -38,8 +38,11 @@ pub struct Options {
     /// Parse decorators. On by default — they are load-bearing TS.
     pub decorators: bool,
     /// Emit `import { __ztsAbsurd } from "@zestty/core";` instead of the
-    /// per-file helper (issue #37). Off by default: napi/Vite/LSP consumers
-    /// may not depend on @zestty/core; committed-twins mode turns it on.
+    /// per-file helper. ON by default since Phase 6 (issue #47, "universal
+    /// absurd"): one shared definition instead of a copy per module.
+    /// Turn OFF (CLI `--inline-preamble`, `inlinePreamble` plugin options)
+    /// for consumers without the @zestty/core dependency, and for virtual
+    /// twins that never ship (plain zts-check, the language-server).
     /// Scripts (non-modules) always keep the inline helper — they cannot
     /// import.
     pub preamble_import: bool,
@@ -53,7 +56,7 @@ impl Default for Options {
         Options {
             tsx: false,
             decorators: true,
-            preamble_import: false,
+            preamble_import: true,
             inline_sources_content: true,
         }
     }
@@ -269,12 +272,20 @@ pub fn compile_source(
 /// Compiles a `.zts`/`.ztsx` file on disk (convenience wrapper for the CLI
 /// and tests). `.ztsx` turns on JSX parsing, mirroring `.ts`/`.tsx`.
 pub fn compile_file(cm: &Lrc<SourceMap>, handler: &Handler, path: &Path) -> Result<Output> {
+    compile_file_with(cm, handler, path, Options::default())
+}
+
+/// [`compile_file`] with explicit options. `tsx` is still derived from the
+/// file extension — the extension is the authority, exactly as `.ts`/`.tsx`.
+pub fn compile_file_with(
+    cm: &Lrc<SourceMap>,
+    handler: &Handler,
+    path: &Path,
+    mut opts: Options,
+) -> Result<Output> {
     let source = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    let opts = Options {
-        tsx: path.extension().is_some_and(|e| e == "ztsx"),
-        ..Default::default()
-    };
+    opts.tsx = path.extension().is_some_and(|e| e == "ztsx");
     compile(
         cm,
         handler,

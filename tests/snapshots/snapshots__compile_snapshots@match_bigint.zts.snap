@@ -3,11 +3,7 @@ source: tests/snapshots.rs
 expression: out.code
 input_file: tests/fixtures/match_bigint.zts
 ---
-function __ztsAbsurd(x: never): never {
-    throw globalThis.Object.assign(new globalThis.Error("zts: non-exhaustive match"), {
-        ztsTag: x
-    });
-}
+import { __ztsAbsurd } from "@zestty/core";
 type Flag = -1n | 0n | 1n;
 declare const flag: Flag;
 const label = ((__m)=>{

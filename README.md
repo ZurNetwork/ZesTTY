@@ -91,19 +91,14 @@ const area = match (shape) {
 Lowers to:
 
 ```ts
-// generated TS (helper injected once per module, after directives+imports;
-// any-free so linted twins need no exemptions. In committed-twins mode the
-// helper is imported from @zestty/core instead — one definition, no
-// per-file boilerplate; `zts-check --twins --inline-preamble` restores the
-// standalone form.)
-function __ztsAbsurd(x: never): never {
-  throw globalThis.Object.assign(
-    new globalThis.Error("zts: non-exhaustive match"),
-    {
-      ztsTag: x,
-    },
-  );
-}
+// generated TS (universal absurd, issue #47: the ONE shared helper is
+// imported from @zestty/core — injected once per module, after
+// directives+imports. `--inline-preamble` (CLI/zts-check) and
+// `inlinePreamble` (vite/svelte options) restore the standalone
+// per-module declaration for consumers without the core dependency;
+// virtual twins that never ship — plain zts-check, the language-server —
+// stay inline so dep-less workspaces keep working.)
+import { __ztsAbsurd } from "@zestty/core";
 
 const area = ((__m) => {
   const __k = __m.kind;
@@ -353,9 +348,9 @@ rides on the argument — a receiver cast would need parens the fixer strips
 
 ### Deliberately deferred (do not implement yet)
 
-`Option<T>`, `let`/`let mut`, traits (dictionary passing),
-no-untracked-throws, move checking. (Newtypes and `?` shipped in Phase 5 —
-see features 5 and 6 above.)
+`Option<T>`, `let`/`let mut`, no-untracked-throws, move checking.
+(Newtypes and `?` shipped in Phase 5 — see features 5 and 6 above;
+traits promoted to Phase 6, Zuri-approved 2026-08-06.)
 
 **Shipped 2026-08-06 (Zuri-approved): `not` as a prefix operator** —
 pure sugar, `not <unary-expr>` → `!expr`, same precedence as `!` (so
@@ -379,6 +374,41 @@ These are on the horizon but
 ---
 
 ## Conventions (locked decisions)
+
+### The type-plane rule (Zuri-approved, 2026-08-06)
+
+**Type-plane first.** Every guarantee ZesTTY adds must live in the _types_
+of the generated TS wherever possible — enforced by tsc (the gate we
+already trust) and erased by emit (the discipline we already follow).
+Runtime code in a lowering is justified only when a value must exist at
+runtime anyway (enum factories, `Result` objects). If a guarantee can
+neither be expressed as emitted types nor piggyback on values that
+already exist, it needs a checker we'd have to write ourselves — and
+that is an automatic reject.
+
+The type plane is **write-only** for us. The compiler is purely
+syntactic (parse → lower → emit; no inference, no checker), so a feature
+must be decidable from **syntax alone** at lowering time:
+
+1. Lowers to **pure types**? Best case — zero runtime cost, zero hygiene
+   risk, fully erased.
+2. Needs runtime values that **would exist anyway**? Acceptable — this
+   is `match`/enums/`Result` today: the shape is runtime, the guarantee
+   is still the type plane.
+3. Needs branching on a type, or analysis tsc cannot be shaped into?
+   Reject — the same reasoning that killed no-untracked-throws.
+
+We can still _pose questions_ to the type plane: emit types that encode
+a proof obligation and let tsc be the oracle — its failure surfaces as
+our diagnostic (the `__ztsAbsurd` keystone is exactly this), and TS's
+own type-level operators (`keyof`, mapped, conditional types) are
+computation we may emit without ever reading the answer. Corollaries in
+shipped code: `match` picks literal-mode vs variant-mode from the arm
+_shapes_, never from the matched expression's type; a bindingless
+variant arm emits no destructure at all (issue #38) — lowering decides
+shape from syntax, tsc owns meaning.
+
+### Other locked conventions
 
 - Discriminant field is **`kind`** (string literal). Everywhere. Non-negotiable.
 - Generated helper identifiers use the `__zts` prefix (`__m`, `__ztsAbsurd`).
@@ -508,7 +538,60 @@ Dispositions from the same review (recorded so they are not re-litigated):
   the superset promise; the itch belongs to a zts-check lint.
 - no-untracked-throws — REJECTED: needs call-graph analysis tsc cannot be
   shaped into; the ZesTTY answer to exceptions is `Result` + `?`.
-- Traits / move checking — horizon items, unchanged.
+- Traits — promoted to Phase 6 (Zuri-approved, 2026-08-06); move
+  checking stays a horizon item.
+
+### Phase 6 — Traits + universal absurd (Zuri-approved, 2026-08-06; NEXT)
+
+The next implementation. Repeats the Phase 1 loop (fork parser tests,
+snapshots happy + error, tsc exit test per safety property, review gate).
+
+- [ ] **Traits — TS-flavored, one new construct only.** Design decided
+      in conversation with Zuri (2026-08-06); passes the type-plane rule
+      at levels 1–2. Deliberately NOT Rust cosplay: everything except
+      the `impl` block is plain TypeScript on both ends.
+  - **Trait declaration = a vanilla TS `interface`** with a `Self` type
+    parameter (`interface Display<Self> { fmt(self: Self): string }`).
+    Zero new grammar; erased.
+  - **`impl Display for Shape { fn fmt(self) -> string { ... } }`** —
+    the one zts construct (`for` header locked: it reads as a sentence).
+    Lowers to methods **merged into the factory const the enum already
+    emits**, with `satisfies ... & Display<Shape>` appended — the
+    dictionary is a value that must exist anyway (level 2), and
+    conformance is tsc's verdict (level 1).
+  - **Calls are plain TS**: direct `Shape.fmt(s)` (static-method style);
+    generic bounds are ordinary dictionary parameters —
+    `function describe<T>(x: T, impl: Display<T>)` called as
+    `describe(s, Shape)`, because the factory namespace structurally
+    satisfies `Display<Shape>`. **No call-site lowering exists at all**
+    (a Rust-style turbofish would have required cross-module knowledge
+    of callee bounds — non-syntactic, rejected). Vanilla `.ts` consumers
+    get the whole system for free; it is just objects and interfaces.
+  - **Safety properties (each gets a tsc exit test):** missing/wrong
+    method → `satisfies Display<Shape>` fails on the impl; deleted impl
+    → every call site fails; non-exhaustive `match` inside an impl → the
+    existing `__ztsAbsurd` keystone fires; two impls colliding on a
+    method name → duplicate object key (TS1117) — coherence enforced by
+    the emit shape, never checked by us.
+  - **Orphan rule (locked):** `impl ... for T` only in the module that
+    declares `T` — locally checkable at parse time, and what makes the
+    factory-merge lowering possible.
+  - **v1 scope forks (open):** enum-only impls vs also newtypes/plain
+    types; default trait methods (lean: defer to v2); multi-trait impls
+    on one type (falls out of the merge — keep).
+- [x] **Universal absurd** (issue #47) — SHIPPED. The default emit now
+      imports the ONE shared `__ztsAbsurd` from `@zestty/core` (as
+      `--twins` mode already did, issue #37) instead of declaring the
+      helper per module. Rationale (Zuri): the per-module copy was
+      re-generated on top of functions — a waste of memory. Opt-outs:
+      CLI `--inline-preamble`, `inlinePreamble` option on the vite
+      plugin and svelte preprocessor (both now carry an optional peer on
+      `@zestty/core >= 0.4.0`). Virtual twins that never ship stay
+      inline deliberately: plain `zts-check` temp twins and the
+      language-server, so dep-less workspaces keep working and editor
+      diagnostics can't invent a missing-module error. Scripts
+      (non-modules) always inline — they cannot import. Pinned by an
+      inline-mode snapshot + a self-contained tsc exit test.
 
 ### Phase 3 — DX
 

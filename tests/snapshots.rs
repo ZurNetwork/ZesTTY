@@ -17,6 +17,22 @@ fn compile_snapshots() {
 }
 
 #[test]
+fn inline_preamble_snapshot() {
+    // The inline opt-out (issue #47) keeps the standalone per-module
+    // helper; pin its shape so the default flip can't silently change it.
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/match_basic.zts");
+    let opts = zestty::Options {
+        preamble_import: false,
+        ..Default::default()
+    };
+    let (out, diags) = common::compile_fixture_with(&path, opts)
+        .unwrap_or_else(|(e, d)| panic!("match_basic failed: {e}\n{d}"));
+    assert_eq!(diags, "");
+    insta::assert_snapshot!(out.code);
+}
+
+#[test]
 fn error_snapshots() {
     insta::glob!("fixtures/errors/*.zts", |path| {
         let (_, diags) = common::compile_fixture(path)

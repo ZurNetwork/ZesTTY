@@ -3,11 +3,7 @@ source: tests/snapshots.rs
 expression: out.code
 input_file: tests/fixtures/match_missing_arm.zts
 ---
-function __ztsAbsurd(x: never): never {
-    throw globalThis.Object.assign(new globalThis.Error("zts: non-exhaustive match"), {
-        ztsTag: x
-    });
-}
+import { __ztsAbsurd } from "@zestty/core";
 type Shape = {
     kind: "Circle";
     radius: number;
