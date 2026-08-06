@@ -47,6 +47,8 @@ pub fn check(module: &Module, handler: &Handler) -> Result<(), SemanticFailure> 
         fn_depth: 0,
         zts_iife_depth: 0,
         allow_try: None,
+        enclosing_fn: EnclosingFn::None,
+        next_fn_is_setter: false,
     };
     module.visit_with(&mut checker);
 
@@ -88,22 +90,50 @@ struct Checker<'a> {
     /// from the IIFE, not the user's function. Reset at function
     /// boundaries.
     zts_iife_depth: usize,
-    /// Identity of the one sanctioned `?` of the statement being visited
-    /// (whole-RHS forms only). Pointer identity — a flag would be burned
-    /// by unrelated statements nested in destructuring defaults, and would
-    /// blame the wrong `?` in `const { a = h()? } = g()?;`.
-    allow_try: Option<*const ZtsTryExpr>,
+    /// Identity (address) of the one sanctioned `?` of the statement being
+    /// visited (whole-RHS forms only). Node identity — a flag would be
+    /// burned by unrelated statements nested in destructuring defaults, and
+    /// would blame the wrong `?` in `const { a = h()? } = g()?;`. Stored as
+    /// a usize so a future deref is impossible by construction.
+    allow_try: Option<usize>,
+    /// Return-shape of the nearest enclosing function (F1: `return __t` in
+    /// a void-contextual callback or generator silently swallows the Err).
+    enclosing_fn: EnclosingFn,
+    /// Set by class-method visitors so the inner `visit_function` knows it
+    /// is a setter (setters cannot return a value).
+    next_fn_is_setter: bool,
 }
+
+/// Hard cap on RENDERED zts diagnostics: each one re-renders its source
+/// line, so unbounded emission is a memory-amplification vector (see the
+/// Buf cap in lib.rs — this is the other half of that fix).
+const MAX_DIAGNOSTICS: usize = 100;
 
 impl Checker<'_> {
     fn err(&mut self, span: Span, msg: &str) {
-        self.handler.struct_span_err(span, msg).emit();
         self.errors += 1;
+        match self.errors.cmp(&MAX_DIAGNOSTICS) {
+            std::cmp::Ordering::Less => self.handler.struct_span_err(span, msg).emit(),
+            std::cmp::Ordering::Equal => self
+                .handler
+                .struct_span_err(span, "too many errors; further zts diagnostics suppressed")
+                .emit(),
+            std::cmp::Ordering::Greater => {}
+        }
     }
 
     fn note_global_this_shadow(&mut self, ident: &Ident) {
         if ident.sym == "globalThis" {
             self.global_this_decls.push(ident.span);
+        }
+        // The `__zts` prefix is documented as generated-code-only; a user
+        // binding named `__ztsValue` etc. would collide with pre-resolver
+        // lowerings that hygiene cannot protect (security-gate F9).
+        if ident.sym.starts_with("__zts") {
+            self.err(
+                ident.span,
+                "identifiers starting with `__zts` are reserved for zts-generated code",
+            );
         }
     }
 
@@ -255,6 +285,20 @@ impl Checker<'_> {
     }
 }
 
+/// Return-shape of the nearest enclosing function, for the `?` operator.
+/// TypeScript accepts ANY returned value from a void-contextual callback
+/// (`xs.forEach(x => ...)`) and folds generator returns into TReturn — in
+/// both, the generated `return __t` would silently swallow the Err. `?`
+/// therefore requires an explicit return type annotation.
+#[derive(Clone, Copy, PartialEq)]
+enum EnclosingFn {
+    None,
+    Annotated,
+    Unannotated,
+    Generator,
+    Setter,
+}
+
 /// The `?` operator's sanctioned v1 shapes: the try is the WHOLE top-level
 /// expression of one of these statements. Anything deeper would hoist the
 /// operand's evaluation past sibling subexpressions — a silent side-effect
@@ -328,7 +372,40 @@ impl Visit for Checker<'_> {
         stmts.visit_children_with(self);
     }
 
+    fn visit_ts_type(&mut self, t: &TsType) {
+        // Types recurse through lowering (newtype clones its underlying
+        // type), hygiene, codegen and Drop just like expressions — charge
+        // them against the same budget (security-gate F3).
+        self.expr_depth += 1;
+        if self.expr_depth > MAX_EXPR_DEPTH {
+            if !self.depth_reported {
+                self.depth_reported = true;
+                self.err(
+                    t.span(),
+                    &format!("type nesting exceeds the zts limit of {MAX_EXPR_DEPTH}"),
+                );
+            }
+        } else {
+            t.visit_children_with(self);
+        }
+        self.expr_depth -= 1;
+    }
+
     fn visit_stmt(&mut self, s: &Stmt) {
+        // Statement nesting (`if (c) if (c) ...`) recurses through the
+        // post-parse passes too (security-gate F4); same budget.
+        self.expr_depth += 1;
+        if self.expr_depth > MAX_EXPR_DEPTH {
+            if !self.depth_reported {
+                self.depth_reported = true;
+                self.err(
+                    s.span(),
+                    &format!("statement nesting exceeds the zts limit of {MAX_EXPR_DEPTH}"),
+                );
+            }
+            self.expr_depth -= 1;
+            return;
+        }
         let saved = self.allow_try;
         if let Some(t) = stmt_top_try(s) {
             if self.fn_depth == 0 {
@@ -343,19 +420,42 @@ impl Visit for Checker<'_> {
                     "`?` inside a match arm or if-expression block is not supported in v1: \
                      the construct lowers to an IIFE, which would hijack the early return",
                 );
+            } else {
+                match self.enclosing_fn {
+                    EnclosingFn::Setter => self.err(
+                        t.span,
+                        "`?` cannot be used in a setter: setters cannot return a value, so \
+                         there is no way to propagate the `Err`",
+                    ),
+                    EnclosingFn::Generator => self.err(
+                        t.span,
+                        "`?` inside a generator is not supported: the early return would \
+                         silently become the generator's TReturn instead of propagating \
+                         the `Err`",
+                    ),
+                    EnclosingFn::Unannotated => self.err(
+                        t.span,
+                        "`?` requires the enclosing function to have an explicit return \
+                         type annotation so tsc can verify the propagated `Err` (in a \
+                         void-contextual callback like `xs.forEach(x => ...)` an inferred \
+                         return type lets the Err vanish silently)",
+                    ),
+                    EnclosingFn::Annotated | EnclosingFn::None => {}
+                }
             }
             // Permit this exact node either way — the context error above
             // already covers it; the generic shape error would be noise.
-            self.allow_try = Some(t as *const ZtsTryExpr);
+            self.allow_try = Some(t as *const ZtsTryExpr as usize);
         }
         s.visit_children_with(self);
         self.allow_try = saved;
+        self.expr_depth -= 1;
     }
 
     fn visit_zts_try_expr(&mut self, t: &ZtsTryExpr) {
         if self
             .allow_try
-            .is_some_and(|allowed| std::ptr::eq(t, allowed))
+            .is_some_and(|allowed| allowed == t as *const ZtsTryExpr as usize)
         {
             self.allow_try = None;
         } else {
@@ -372,7 +472,18 @@ impl Visit for Checker<'_> {
     fn visit_function(&mut self, f: &Function) {
         self.fn_depth += 1;
         let saved = std::mem::replace(&mut self.zts_iife_depth, 0);
+        let shape = if std::mem::take(&mut self.next_fn_is_setter) {
+            EnclosingFn::Setter
+        } else if f.is_generator {
+            EnclosingFn::Generator
+        } else if f.return_type.is_some() {
+            EnclosingFn::Annotated
+        } else {
+            EnclosingFn::Unannotated
+        };
+        let saved_fn = std::mem::replace(&mut self.enclosing_fn, shape);
         f.visit_children_with(self);
+        self.enclosing_fn = saved_fn;
         self.zts_iife_depth = saved;
         self.fn_depth -= 1;
     }
@@ -380,9 +491,41 @@ impl Visit for Checker<'_> {
     fn visit_arrow_expr(&mut self, a: &ArrowExpr) {
         self.fn_depth += 1;
         let saved = std::mem::replace(&mut self.zts_iife_depth, 0);
+        let shape = if a.return_type.is_some() {
+            EnclosingFn::Annotated
+        } else {
+            EnclosingFn::Unannotated
+        };
+        let saved_fn = std::mem::replace(&mut self.enclosing_fn, shape);
         a.visit_children_with(self);
+        self.enclosing_fn = saved_fn;
         self.zts_iife_depth = saved;
         self.fn_depth -= 1;
+    }
+
+    fn visit_class_method(&mut self, m: &ClassMethod) {
+        self.next_fn_is_setter = m.kind == MethodKind::Setter;
+        m.visit_children_with(self);
+        self.next_fn_is_setter = false;
+    }
+
+    fn visit_private_method(&mut self, m: &PrivateMethod) {
+        self.next_fn_is_setter = m.kind == MethodKind::Setter;
+        m.visit_children_with(self);
+        self.next_fn_is_setter = false;
+    }
+
+    fn visit_constructor(&mut self, c: &Constructor) {
+        // A constructor cannot return a value; `?` inside one must get the
+        // "needs an enclosing function" error even when the class sits
+        // inside a function.
+        let saved_fn = std::mem::replace(&mut self.fn_depth, 0);
+        let saved_shape = std::mem::replace(&mut self.enclosing_fn, EnclosingFn::None);
+        let saved_iife = std::mem::replace(&mut self.zts_iife_depth, 0);
+        c.visit_children_with(self);
+        self.fn_depth = saved_fn;
+        self.enclosing_fn = saved_shape;
+        self.zts_iife_depth = saved_iife;
     }
 
     fn visit_static_block(&mut self, b: &StaticBlock) {
@@ -390,9 +533,11 @@ impl Visit for Checker<'_> {
         // so `?` has nothing to return from. Reset the context so the
         // "needs an enclosing function" error fires.
         let saved_fn = std::mem::replace(&mut self.fn_depth, 0);
+        let saved_shape = std::mem::replace(&mut self.enclosing_fn, EnclosingFn::None);
         let saved_iife = std::mem::replace(&mut self.zts_iife_depth, 0);
         b.visit_children_with(self);
         self.fn_depth = saved_fn;
+        self.enclosing_fn = saved_shape;
         self.zts_iife_depth = saved_iife;
     }
 

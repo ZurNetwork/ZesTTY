@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_try_unannotated_callback.zts
+---
+error: `?` requires the enclosing function to have an explicit return type annotation so tsc can verify the propagated `Err` (in a void-contextual callback like `xs.forEach(x => ...)` an inferred return type lets the Err vanish silently)
+ --> tests/fixtures/errors/err_try_unannotated_callback.zts:8:15
+  |
+8 |     const p = parsePort(x)?;
+  |               ^^^^^^^^^^^^^

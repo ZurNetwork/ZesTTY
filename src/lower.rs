@@ -825,6 +825,30 @@ impl VisitMut for Lower {
         }
     }
 
+    fn visit_mut_module_items(&mut self, items: &mut Vec<ModuleItem>) {
+        // Defense in depth: semantic rejects module-level `?`, but ZtsTry
+        // is public API — never let one reach codegen's unreachable!.
+        items.visit_mut_children_with(self);
+        if !items
+            .iter()
+            .any(|item| matches!(item, ModuleItem::Stmt(s) if stmt_has_top_try(s)))
+        {
+            return;
+        }
+        let mut out: Vec<ModuleItem> = Vec::with_capacity(items.len() + 2);
+        for item in items.drain(..) {
+            match item {
+                ModuleItem::Stmt(s) if stmt_has_top_try(&s) => {
+                    let mut expanded = Vec::with_capacity(3);
+                    expand_try_stmt(s, &mut expanded);
+                    out.extend(expanded.into_iter().map(ModuleItem::Stmt));
+                }
+                other => out.push(other),
+            }
+        }
+        *items = out;
+    }
+
     fn visit_mut_module(&mut self, module: &mut Module) {
         module.visit_mut_children_with(self);
 

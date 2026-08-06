@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_try_generator.zts
+---
+error: `?` inside a generator is not supported: the early return would silently become the generator's TReturn instead of propagating the `Err`
+ --> tests/fixtures/errors/err_try_generator.zts:5:15
+  |
+5 |     const p = g()?;
+  |               ^^^^

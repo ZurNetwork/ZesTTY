@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_try_setter.zts
+---
+error: `?` cannot be used in a setter: setters cannot return a value, so there is no way to propagate the `Err`
+ --> tests/fixtures/errors/err_try_setter.zts:6:15
+  |
+6 |     const p = g()?;
+  |               ^^^^

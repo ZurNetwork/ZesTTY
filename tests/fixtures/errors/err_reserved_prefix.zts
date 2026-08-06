@@ -1,0 +1,5 @@
+const __ztsValue = 1;
+
+newtype D = typeof __ztsValue;
+
+console.log(D(2));

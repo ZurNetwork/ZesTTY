@@ -1,0 +1,8 @@
+declare function g(): { kind: "Ok"; value: number } | { kind: "Err"; error: string };
+
+export function* ports(xs: string[]) {
+  for (const x of xs) {
+    const p = g()?;
+    yield p;
+  }
+}

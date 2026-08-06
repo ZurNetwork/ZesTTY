@@ -205,12 +205,30 @@ pub fn compile_source(
 ) -> std::result::Result<Output, CompileFailure> {
     use std::sync::{Arc, Mutex};
 
+    /// Rendered diagnostics are capped: each error re-renders its source
+    /// line, so pathological single-line inputs amplify quadratically
+    /// (review-gated: 406 KB of input rendered 831 MB of diagnostics and
+    /// OOM-killed dev servers). Writes past the cap are swallowed; the
+    /// marker tells the consumer truncation happened.
+    const DIAG_CAP: usize = 1024 * 1024;
+    const DIAG_TRUNCATED_MARKER: &str = "\n... [zts: diagnostics truncated]\n";
+
     #[derive(Clone, Default)]
     struct Buf(Arc<Mutex<Vec<u8>>>);
 
     impl std::io::Write for Buf {
         fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().write(b)
+            let mut v = self.0.lock().unwrap();
+            if v.len() < DIAG_CAP {
+                let room = DIAG_CAP - v.len();
+                v.extend_from_slice(&b[..b.len().min(room)]);
+                if v.len() >= DIAG_CAP {
+                    v.extend_from_slice(DIAG_TRUNCATED_MARKER.as_bytes());
+                }
+            }
+            // Report full consumption either way — the emitter must not
+            // error, and the cap is invisible to it.
+            Ok(b.len())
         }
 
         fn flush(&mut self) -> std::io::Result<()> {
