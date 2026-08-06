@@ -1,0 +1,7 @@
+declare const b: bigint;
+
+const bad = match (b) {
+  0n => "zero",
+  -0n => "also zero",
+  _ => "other",
+};
