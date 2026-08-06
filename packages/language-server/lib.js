@@ -227,6 +227,97 @@ export class ZtsProject {
     };
   }
 
+  /**
+   * Completions at an original position, relayed to the TS language
+   * service over the twin (issue #13).
+   *
+   * Mid-typing states like `Shape.|` do not COMPILE (the parser wants an
+   * identifier after the dot), so when the current document has a compile
+   * error — or the position doesn't map — we retry against a PATCHED text
+   * with a placeholder identifier spliced in at the cursor, complete at
+   * the placeholder, and restore the real document afterwards.
+   */
+  completions(path, position) {
+    const doc = this.docs.get(path);
+    if (!doc) return [];
+
+    const prefix = wordPrefixAt(doc.text, position);
+
+    let entries = this.rawCompletions(path, position);
+    if (entries == null) {
+      entries = this.placeholderCompletions(path, position, doc);
+    }
+
+    const items = (entries ?? []).map((e) => ({
+      label: e.name,
+      kind: completionItemKind(e.kind),
+      sortText: e.sortText,
+      ...(e.insertText != null && !e.isSnippet
+        ? { insertText: e.insertText }
+        : {}),
+    }));
+
+    // zts keyword items (not after `.`; only for word-y prefixes).
+    const charBeforeWord =
+      doc.text.split("\n")[position.line]?.[
+        position.character - prefix.length - 1
+      ] ?? "";
+    if (charBeforeWord !== ".") {
+      for (const kw of ["match", "enum", "not"]) {
+        if (kw.startsWith(prefix) && prefix.length > 0) {
+          items.push({ label: kw, kind: 14 /* Keyword */, sortText: "0" + kw });
+        }
+      }
+    }
+    return items;
+  }
+
+  /** Try completing against the current twin; null when unmappable. */
+  rawCompletions(path, position) {
+    const doc = this.docs.get(path);
+    if (doc?.error != null) return null;
+    const offset = this.toTwinOffset(path, position);
+    if (offset == null) return null;
+    const info = this.service.getCompletionsAtPosition(
+      twinName(path),
+      offset,
+      {},
+    );
+    return info?.entries ?? null;
+  }
+
+  /** Retry with `__ztsC` spliced in at the cursor, then restore. */
+  placeholderCompletions(path, position, doc) {
+    const PLACEHOLDER = "__ztsC";
+    const lines = doc.text.split("\n");
+    const line = lines[position.line];
+    if (line == null) return null;
+    lines[position.line] =
+      line.slice(0, position.character) +
+      PLACEHOLDER +
+      line.slice(position.character);
+    const patched = lines.join("\n");
+
+    const savedVersion = doc.version;
+    try {
+      this.upsert(path, patched, savedVersion);
+      const mid = {
+        line: position.line,
+        character: position.character + PLACEHOLDER.length - 1,
+      };
+      const offset = this.toTwinOffset(path, mid);
+      if (offset == null) return null;
+      const info = this.service.getCompletionsAtPosition(
+        twinName(path),
+        offset,
+        {},
+      );
+      return info?.entries?.filter((e) => e.name !== PLACEHOLDER) ?? null;
+    } finally {
+      this.upsert(path, doc.text, savedVersion);
+    }
+  }
+
   /** Definitions from an original position; twin hits remap, disk files pass through. */
   definitions(path, position) {
     const offset = this.toTwinOffset(path, position);
@@ -271,6 +362,55 @@ export class ZtsProject {
  */
 export function twinName(path) {
   return path.replace(/\.zts(x?)$/, ".ts$1");
+}
+
+/** The [\w$]* run immediately before the cursor. */
+function wordPrefixAt(text, position) {
+  const line = text.split("\n")[position.line] ?? "";
+  let start = position.character;
+  while (start > 0 && /[\w$]/.test(line[start - 1])) start -= 1;
+  return line.slice(start, position.character);
+}
+
+/** ts.ScriptElementKind → LSP CompletionItemKind (best-effort). */
+function completionItemKind(kind) {
+  switch (kind) {
+    case "method":
+    case "memberFunction":
+      return 2;
+    case "function":
+    case "localFunction":
+      return 3;
+    case "constructor":
+      return 4;
+    case "memberVariable":
+    case "property":
+    case "getter":
+    case "setter":
+      return 5;
+    case "var":
+    case "let":
+    case "local var":
+      return 6;
+    case "class":
+      return 7;
+    case "interface":
+      return 8;
+    case "module":
+      return 9;
+    case "enum":
+      return 13;
+    case "keyword":
+      return 14;
+    case "const":
+      return 21;
+    case "type":
+    case "type parameter":
+    case "alias":
+      return 25;
+    default:
+      return 1; // Text
+  }
 }
 
 function offsetToLineCol(text, offset) {
