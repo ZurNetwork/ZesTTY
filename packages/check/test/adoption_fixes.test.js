@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -16,6 +17,20 @@ import { fileURLToPath } from "node:url";
 import { ztsCheck, generateTwins } from "@zestty/check";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
+
+// Committed twins import the runtime preamble from @zestty/core (issue
+// #37); a tmp consumer dir needs the package resolvable like a real
+// consumer's node_modules.
+const CORE_PKG = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "core",
+);
+function linkCore(dir) {
+  mkdirSync(join(dir, "node_modules", "@zestty"), { recursive: true });
+  symlinkSync(CORE_PKG, join(dir, "node_modules", "@zestty", "core"));
+}
 
 test("#15: SvelteKit-style tsconfig extends ./.svelte-kit works in the shadow", () => {
   const lines = [];
@@ -104,6 +119,7 @@ export const r = match (t) {
 };
 `;
     writeFileSync(join(dir, "m.zts"), src);
+    linkCore(dir);
     generateTwins(dir, { log: () => {} });
     const lines = [];
     const code = ztsCheck(dir, { log: (l) => lines.push(l) });

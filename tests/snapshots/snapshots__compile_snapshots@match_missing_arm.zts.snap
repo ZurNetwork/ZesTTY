@@ -4,9 +4,9 @@ expression: out.code
 input_file: tests/fixtures/match_missing_arm.zts
 ---
 function __ztsAbsurd(x: never): never {
-    const e: any = new globalThis.Error("zts: non-exhaustive match");
-    e.ztsTag = x;
-    throw e;
+    throw globalThis.Object.assign(new globalThis.Error("zts: non-exhaustive match"), {
+        ztsTag: x
+    });
 }
 type Shape = {
     kind: "Circle";
