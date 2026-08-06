@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_union_dup_member.zts
+---
+error: duplicate union member
+ --> tests/fixtures/errors/err_union_dup_member.zts:1:33
+  |
+1 | union Level = 'info' | 'warn' | 'info';
+  |                                 ^^^^^^

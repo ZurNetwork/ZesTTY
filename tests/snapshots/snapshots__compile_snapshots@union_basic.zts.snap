@@ -1,0 +1,42 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/union_basic.zts
+---
+function __ztsAbsurd(x: never): never {
+    throw globalThis.Object.assign(new globalThis.Error("zts: non-exhaustive match"), {
+        ztsTag: x
+    });
+}
+// Closed string-literal vocabulary: type + runtime values + type guard.
+type DeleteOutcome = 'soft' | 'hard' | 'unknown';
+const DeleteOutcome = {
+    values: [
+        'soft',
+        'hard',
+        'unknown'
+    ] as const,
+    has: (__ztsRaw: string): __ztsRaw is DeleteOutcome =>DeleteOutcome.values.includes(__ztsRaw as DeleteOutcome)
+};
+// The wire-normalizer nuisance this kills: has() narrows, no hand-listed
+// literals, and the wildcard is the R8 fail-closed fallback.
+export function toDeleteOutcome(raw: string): DeleteOutcome {
+    return DeleteOutcome.has(raw) ? raw : 'unknown';
+}
+// Exhaustive literal match still applies — no wildcard needed on the
+// closed side.
+export function describe(o: DeleteOutcome): string {
+    return ((__m)=>{
+        if (__m === 'soft') {
+            return 'kept';
+        }
+        if (__m === 'hard') {
+            return 'gone';
+        }
+        if (__m === 'unknown') {
+            return 'unclear';
+        }
+        return __ztsAbsurd(__m);
+    })(o);
+}
+console.log(DeleteOutcome.values.length, describe(toDeleteOutcome('soft')));

@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_declare_union.zts
+---
+error: `declare union` is not supported in zts; declare the lowered shape instead (a literal-union type alias + a values/has object)
+ --> tests/fixtures/errors/err_declare_union.zts:1:1
+  |
+1 | declare union Level = 'info' | 'warn';
+  | ^^^^^^^^^^^^^
