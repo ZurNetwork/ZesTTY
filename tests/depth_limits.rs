@@ -52,6 +52,69 @@ fn moderate_else_if_chain_compiles() {
 }
 
 #[test]
+fn deep_type_nesting_is_a_diagnostic_not_a_crash() {
+    // Security-gate F3: 30k-deep parenthesized type annotations used to
+    // SIGABRT at parse time (no maybe_grow on parse_ts_type) and the
+    // semantic pass never counted TsType nesting at all.
+    let n = 30_000;
+    let src = format!(
+        "declare const y: {}string{};\n",
+        "(".repeat(n),
+        ")".repeat(n)
+    );
+    let err =
+        on_napi_sized_thread(move || compile_source("deep_type.zts", src, Options::default()))
+            .expect_err("a 30k-deep type nest must be rejected");
+    assert!(
+        err.diagnostics.contains("nesting exceeds"),
+        "expected the depth diagnostic, got:\n{}",
+        err.diagnostics
+    );
+}
+
+#[test]
+fn deep_if_stmt_nesting_is_a_diagnostic_not_a_crash() {
+    // Security-gate F4: 100k nested `if` statements overflowed the
+    // post-parse passes (the parser has maybe_grow; the visitors did not
+    // charge Stmt nesting).
+    let n = 100_000;
+    let mut src = String::from("declare const c: boolean;\nfunction f(): void {\n");
+    src.push_str(&"if (c) ".repeat(n));
+    src.push(';');
+    src.push_str("\n}\n");
+    let err = on_napi_sized_thread(move || compile_source("deep_if.zts", src, Options::default()))
+        .expect_err("a 100k-deep if nest must be rejected");
+    assert!(
+        err.diagnostics.contains("nesting exceeds"),
+        "expected the depth diagnostic, got:\n{}",
+        err.diagnostics
+    );
+}
+
+#[test]
+fn diagnostics_are_bounded_on_pathological_input() {
+    // Security-gate F2: one error per character of a single-line input
+    // used to render ~831 MB of diagnostics from 406 KB of source. Both
+    // the semantic error count and the rendered buffer are capped now.
+    let n = 2100;
+    let mut src = String::from("//");
+    src.push_str(&"x".repeat(400_000));
+    src.push('\n');
+    src.push_str("const v = ");
+    src.push_str(&"(".repeat(n));
+    src.push('1');
+    src.push_str(&")?".repeat(n));
+    src.push_str(";\n");
+    let err = on_napi_sized_thread(move || compile_source("amplify.zts", src, Options::default()))
+        .expect_err("nested tries must be rejected");
+    assert!(
+        err.diagnostics.len() < 2 * 1024 * 1024,
+        "diagnostics must be bounded, got {} bytes",
+        err.diagnostics.len()
+    );
+}
+
+#[test]
 fn deep_nested_match_is_a_diagnostic_not_a_crash() {
     let n = 3000;
     let mut src = String::from("declare const t: { kind: \"K\"; v: number };\nconst r = ");

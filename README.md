@@ -269,10 +269,15 @@ function boot(raw: string): Result<number, string> {
 }
 ```
 
-tsc enforces the whole contract on the generated shape alone: `.kind` on a
-non-Result is TS2339, and `return __t` fails (TS2322) unless the enclosing
-return type accepts the `Err` side — error-type compatibility with zero
-checker work on our side.
+tsc enforces the contract on the generated shape: `.kind` on a non-Result
+is TS2339, and `return __t` fails (TS2322) unless the enclosing return type
+accepts the `Err` side. For that check to be REAL, the enclosing function
+must carry an explicit return type annotation — zts requires it (in a
+void-contextual callback like `xs.forEach(x => ...)` TypeScript accepts any
+returned value, so an inferred return type would let the Err vanish
+silently). `?` is also banned in generators (the early return would become
+TReturn) and setters (cannot return a value); both get dedicated
+diagnostics.
 
 Parse rule (locked): `?` is a try operator ONLY where a ternary is
 impossible — immediately before `;` `)` `,` `]`. One-token lookahead, fully
@@ -288,7 +293,8 @@ or a bare expression statement, inside a real function body. Nested uses
 reorder side effects (`g(a(), f()?)` would run `f` before `a`). Also banned:
 module top level (nothing to return from) and match-arm / if-expression
 blocks (they lower to IIFEs, which would hijack the early return; a nested
-real function resets the rule). In single-statement slots (`if (c) g()?;`,
+real function with an annotated return type resets the rule). In
+single-statement slots (`if (c) g()?;`,
 loop bodies, labels) the expansion is wrapped in a block, so the early
 return keeps its meaning.
 

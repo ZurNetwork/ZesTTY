@@ -1,0 +1,12 @@
+import { type Result, Ok } from "@zestty/core";
+
+declare function parsePort(raw: string): Result<number, string>;
+
+export function process(xs: string[]): Result<number, string> {
+  let total = 0;
+  xs.forEach((x) => {
+    const p = parsePort(x)?;
+    total += p;
+  });
+  return Ok(total);
+}
