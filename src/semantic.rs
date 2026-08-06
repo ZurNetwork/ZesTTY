@@ -191,7 +191,14 @@ impl Checker<'_> {
                             format!("n:{}", v + 0.0)
                         }
                         Lit::BigInt(b) => {
-                            format!("bi:{}{}", if l.neg { "-" } else { "" }, b.value)
+                            // Negate the VALUE (num_bigint never displays
+                            // `-0`), not the text — `0n` and `-0n` are ===.
+                            let v = if l.neg {
+                                -(*b.value).clone()
+                            } else {
+                                (*b.value).clone()
+                            };
+                            format!("bi:{v}")
                         }
                         Lit::Bool(b) => format!("b:{}", b.value),
                         Lit::Null(..) => "null".to_string(),
@@ -328,7 +335,7 @@ impl Visit for Checker<'_> {
                 self.err(
                     t.span,
                     "`?` needs an enclosing function to return the `Err` from; it cannot be \
-                     used at module top level",
+                     used at module top level or in a class static block",
                 );
             } else if self.zts_iife_depth > 0 {
                 self.err(

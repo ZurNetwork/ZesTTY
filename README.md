@@ -288,7 +288,9 @@ or a bare expression statement, inside a real function body. Nested uses
 reorder side effects (`g(a(), f()?)` would run `f` before `a`). Also banned:
 module top level (nothing to return from) and match-arm / if-expression
 blocks (they lower to IIFEs, which would hijack the early return; a nested
-real function resets the rule).
+real function resets the rule). In single-statement slots (`if (c) g()?;`,
+loop bodies, labels) the expansion is wrapped in a block, so the early
+return keeps its meaning.
 
 ### Deliberately deferred (do not implement yet)
 
