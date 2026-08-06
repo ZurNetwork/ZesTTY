@@ -26,7 +26,11 @@ import {
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 
-const SKIP_DIRS = new Set([".git", "target", ".zts-check", ".svelte-kit"]);
+const SKIP_DIRS = new Set([".git", "target", ".zts-check"]);
+// Symlinked wholesale rather than walked: generated output that the shadow
+// must still SEE — SvelteKit's tsconfig `extends ./.svelte-kit/tsconfig.json`
+// (issue #15), and module resolution needs node_modules.
+const LINK_DIRS = new Set(["node_modules", ".svelte-kit"]);
 const SVELTE_ZTS_SCRIPT =
   /<script([^>]*)\blang\s*=\s*["']zts["']([^>]*)>([\s\S]*?)<\/script>/g;
 
@@ -132,7 +136,7 @@ export function buildShadow(root, shadowDir) {
       }
       if (entry.isDirectory()) {
         if (SKIP_DIRS.has(entry.name)) continue;
-        if (entry.name === "node_modules") {
+        if (LINK_DIRS.has(entry.name)) {
           symlinkSync(src, dst, "dir");
           continue;
         }

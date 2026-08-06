@@ -274,9 +274,14 @@ arm body is a compile error until arms can lower to async IIFEs.
 
 ### Consumer notes (learned from the first real integration)
 
-- **Declare the Svelte preprocessor in `svelte.config.js`**, not via inline
-  `sveltekit({...})` options in `vite.config.ts` — SvelteKit ignores
-  `svelte.config.js` entirely when options are passed inline.
+- **Where to declare the Svelte preprocessor depends on where your Kit
+  options live.** If you pass options inline to `sveltekit({...})` in
+  `vite.config.ts`, SvelteKit IGNORES `svelte.config.js` entirely (it
+  warns about this) — so the preprocessor (and `moduleExtensions`) must
+  go inline there too. The better setup: move everything to
+  `svelte.config.js`, which external tools (svelte-check, editors) read
+  anyway. Pick ONE home for the options; a preprocessor declared in the
+  file Kit isn't reading cost a real debugging round downstream.
 - **svelte-check cannot type-check `lang="zts"` blocks itself** (v4.6): it
   checks the ORIGINAL source and keys the language off the original `lang`
   attribute. **`zts-check` closes the gap completely**: it checks `.zts`
