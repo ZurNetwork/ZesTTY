@@ -28,6 +28,9 @@ connection.onInitialize((params) => {
       textDocumentSync: TextDocumentSyncKind.Full,
       hoverProvider: true,
       definitionProvider: true,
+      completionProvider: {
+        triggerCharacters: [".", '"', "'"],
+      },
     },
   };
 });
@@ -50,6 +53,10 @@ documents.onDidClose((e) => {
 
 connection.onHover(({ textDocument, position }) => {
   return project.hover(fileURLToPath(textDocument.uri), position);
+});
+
+connection.onCompletion(({ textDocument, position }) => {
+  return project.completions(fileURLToPath(textDocument.uri), position);
 });
 
 connection.onDefinition(({ textDocument, position }) => {
