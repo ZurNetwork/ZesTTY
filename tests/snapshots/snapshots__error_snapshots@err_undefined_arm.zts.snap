@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_undefined_arm.zts
+---
+error: `undefined` is not a supported match arm pattern (supported: variants, string/number/bigint/boolean literals, `null`, and `_`); model absence explicitly or use a `_` arm
+ --> tests/fixtures/errors/err_undefined_arm.zts:4:3
+  |
+4 |   undefined => "none",
+  |   ^^^^^^^^^

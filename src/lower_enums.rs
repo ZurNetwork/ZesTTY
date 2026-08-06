@@ -44,7 +44,7 @@
 //! happens at the statement-list level.
 
 use swc_atoms::atom;
-use swc_common::SyntaxContext;
+use swc_common::{Spanned, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith, visit_mut_pass};
 
@@ -245,7 +245,16 @@ fn lower_newtype(n: &ZtsNewtypeDecl) -> (Decl, Decl) {
         })],
     });
 
-    // type Name = <underlying> & { readonly __ztsNewtype: "Name" };
+    // type Name = (<underlying>) & { readonly __ztsNewtype: "Name" };
+    //
+    // The parens are load-bearing (review-gated): stock codegen has no
+    // type-level fixer, and `&` binds tighter than `|`, so an unwrapped
+    // union underlying type would brand only its LAST member — silently
+    // reopening the ID-confusion bug class. Same for `=>` return types.
+    let underlying = Box::new(TsType::TsParenthesizedType(TsParenthesizedType {
+        span: n.type_ann.span(),
+        type_ann: n.type_ann.clone(),
+    }));
     let type_alias = Decl::TsTypeAlias(Box::new(TsTypeAliasDecl {
         span: n.span,
         declare: false,
@@ -254,7 +263,7 @@ fn lower_newtype(n: &ZtsNewtypeDecl) -> (Decl, Decl) {
         type_ann: Box::new(TsType::TsUnionOrIntersectionType(
             TsUnionOrIntersectionType::TsIntersectionType(TsIntersectionType {
                 span: n.span,
-                types: vec![n.type_ann.clone(), Box::new(brand)],
+                types: vec![underlying, Box::new(brand)],
             }),
         )),
     }));
@@ -267,8 +276,10 @@ fn lower_newtype(n: &ZtsNewtypeDecl) -> (Decl, Decl) {
         }))
     };
 
-    // const Name = (value: <underlying>): Name => value as Name;
-    let value_ident = Ident::new_no_ctxt(atom!("value"), n.span);
+    // const Name = (__ztsValue: <underlying>): Name => __ztsValue as Name;
+    // (a `value`-named param would be captured by `typeof value` in the
+    // underlying type — generated idents keep the __zts prefix)
+    let value_ident = Ident::new_no_ctxt(atom!("__ztsValue"), n.span);
     let arrow = ArrowExpr {
         span: n.span,
         ctxt: SyntaxContext::empty(),

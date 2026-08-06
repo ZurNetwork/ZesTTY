@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_try_static_block.zts
+---
+error: `?` needs an enclosing function to return the `Err` from; it cannot be used at module top level
+ --> tests/fixtures/errors/err_try_static_block.zts:6:17
+  |
+6 |       const x = g()?;
+  |                 ^^^^

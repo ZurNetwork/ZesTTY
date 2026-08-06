@@ -1,0 +1,6 @@
+declare const x: string | undefined;
+
+const bad = match (x) {
+  undefined => "none",
+  _ => "some",
+};

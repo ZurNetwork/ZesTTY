@@ -1,0 +1,11 @@
+// The factory parameter must not capture user names: `typeof value` here
+// refers to the module const, not the generated parameter.
+export const value: number = 42;
+
+newtype N = typeof value;
+
+export const n = N(7);
+
+// Function and union underlying types need the load-bearing parens.
+newtype Handler = (x: number) => void;
+export const h = Handler((x: number) => {});

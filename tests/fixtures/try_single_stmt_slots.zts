@@ -1,0 +1,26 @@
+// `?` in single-statement slots (no surrounding statement list): each must
+// expand inside a block, keeping the early return's meaning.
+type R = { kind: "Ok"; value: number } | { kind: "Err"; error: string };
+
+declare function g(): R;
+declare const xs: R[];
+
+function slots(c: boolean): R | number {
+  if (c) g()?;
+  else g()?;
+
+  while (c) g()?;
+
+  for (let i = 0; i < 2; i++) g()?;
+
+  for (const x of xs) x?;
+
+  outer: g()?;
+
+  // `return e?;` in a slot: unwraps to the Ok value.
+  if (c) return g()?;
+
+  return g();
+}
+
+console.log(slots(true));

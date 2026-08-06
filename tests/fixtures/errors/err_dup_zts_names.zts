@@ -1,0 +1,5 @@
+newtype A = string;
+
+enum A {
+  X { p: number },
+}

@@ -1,0 +1,16 @@
+type Flag = -1n | 0n | 1n;
+
+declare const flag: Flag;
+
+const label = match (flag) {
+  -1n => "neg",
+  0n => "zero",
+  1n => "pos",
+};
+
+const nullable = match (null as string | null) {
+  null => "none",
+  _ => "some",
+};
+
+console.log(label, nullable);

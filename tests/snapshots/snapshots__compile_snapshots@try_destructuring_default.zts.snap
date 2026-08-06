@@ -1,0 +1,33 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/try_destructuring_default.zts
+---
+// A statement nested inside a destructuring default must not burn the
+// permit for the statement's own sanctioned `?` (review-gate finding #5).
+type R = {
+    kind: "Ok";
+    value: {
+        a?: number;
+    };
+} | {
+    kind: "Err";
+    error: string;
+};
+declare function g(): R;
+export function f(): R {
+    const __t = g();
+    if (__t.kind === "Err") {
+        return __t;
+    }
+    const { a = (()=>{
+        const q = 1;
+        return q;
+    })() } = __t.value;
+    return {
+        kind: "Ok",
+        value: {
+            a
+        }
+    };
+}

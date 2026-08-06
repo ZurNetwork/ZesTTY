@@ -676,6 +676,64 @@ fn try_value(t_ident: &Ident, span: Span) -> Expr {
     })
 }
 
+/// Defense + correctness for `?` in single-statement slots (`if (c) g()?;`,
+/// loop bodies, labels): these `Stmt`s are not part of a `Vec<Stmt>`, so the
+/// statement-list expansion never sees them. Expand inside a block — the
+/// early return keeps its meaning. Mirrors lower_enums' single-statement
+/// defense, which enumerates the same slots.
+fn wrap_single_stmt_try(stmt: &mut Stmt) {
+    if !stmt_has_top_try(stmt) {
+        return;
+    }
+    let original = std::mem::replace(stmt, Stmt::Empty(EmptyStmt { span: DUMMY_SP }));
+    let span = original.span();
+    let mut stmts = Vec::with_capacity(3);
+    expand_try_stmt(original, &mut stmts);
+    *stmt = Stmt::Block(BlockStmt {
+        span,
+        ctxt: SyntaxContext::empty(),
+        stmts,
+    });
+}
+
+/// Expand one statement carrying a sanctioned top-level `?` into `out`.
+/// Statements without one are passed through untouched.
+fn expand_try_stmt(stmt: Stmt, out: &mut Vec<Stmt>) {
+    match stmt {
+        Stmt::Decl(Decl::Var(mut v))
+            if v.decls.len() == 1
+                && matches!(v.decls[0].init.as_deref(), Some(Expr::ZtsTry(..))) =>
+        {
+            let Some(Expr::ZtsTry(t)) = v.decls[0].init.take().map(|b| *b) else {
+                unreachable!()
+            };
+            let try_span = t.span;
+            let (prelude, t_ident) = try_prelude(t);
+            out.extend(prelude);
+            v.decls[0].init = Some(Box::new(try_value(&t_ident, try_span)));
+            out.push(Stmt::Decl(Decl::Var(v)));
+        }
+        Stmt::Return(mut r) if matches!(r.arg.as_deref(), Some(Expr::ZtsTry(..))) => {
+            let Some(Expr::ZtsTry(t)) = r.arg.take().map(|b| *b) else {
+                unreachable!()
+            };
+            let try_span = t.span;
+            let (prelude, t_ident) = try_prelude(t);
+            out.extend(prelude);
+            r.arg = Some(Box::new(try_value(&t_ident, try_span)));
+            out.push(Stmt::Return(r));
+        }
+        Stmt::Expr(e) if matches!(&*e.expr, Expr::ZtsTry(..)) => {
+            let Expr::ZtsTry(t) = *e.expr else {
+                unreachable!()
+            };
+            let (prelude, _) = try_prelude(t);
+            out.extend(prelude);
+        }
+        other => out.push(other),
+    }
+}
+
 impl VisitMut for Lower {
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
         // Children first: matches/if-exprs inside try operands (and
@@ -689,41 +747,54 @@ impl VisitMut for Lower {
 
         let mut out: Vec<Stmt> = Vec::with_capacity(stmts.len() + 2);
         for stmt in stmts.drain(..) {
-            match stmt {
-                Stmt::Decl(Decl::Var(mut v))
-                    if v.decls.len() == 1
-                        && matches!(v.decls[0].init.as_deref(), Some(Expr::ZtsTry(..))) =>
-                {
-                    let Some(Expr::ZtsTry(t)) = v.decls[0].init.take().map(|b| *b) else {
-                        unreachable!()
-                    };
-                    let try_span = t.span;
-                    let (prelude, t_ident) = try_prelude(t);
-                    out.extend(prelude);
-                    v.decls[0].init = Some(Box::new(try_value(&t_ident, try_span)));
-                    out.push(Stmt::Decl(Decl::Var(v)));
-                }
-                Stmt::Return(mut r) if matches!(r.arg.as_deref(), Some(Expr::ZtsTry(..))) => {
-                    let Some(Expr::ZtsTry(t)) = r.arg.take().map(|b| *b) else {
-                        unreachable!()
-                    };
-                    let try_span = t.span;
-                    let (prelude, t_ident) = try_prelude(t);
-                    out.extend(prelude);
-                    r.arg = Some(Box::new(try_value(&t_ident, try_span)));
-                    out.push(Stmt::Return(r));
-                }
-                Stmt::Expr(e) if matches!(&*e.expr, Expr::ZtsTry(..)) => {
-                    let Expr::ZtsTry(t) = *e.expr else {
-                        unreachable!()
-                    };
-                    let (prelude, _) = try_prelude(t);
-                    out.extend(prelude);
-                }
-                other => out.push(other),
-            }
+            expand_try_stmt(stmt, &mut out);
         }
         *stmts = out;
+    }
+
+    // `?` in single-statement slots: same nine slots lower_enums defends.
+
+    fn visit_mut_if_stmt(&mut self, s: &mut IfStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_try(&mut s.cons);
+        if let Some(alt) = &mut s.alt {
+            wrap_single_stmt_try(alt);
+        }
+    }
+
+    fn visit_mut_while_stmt(&mut self, s: &mut WhileStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_try(&mut s.body);
+    }
+
+    fn visit_mut_do_while_stmt(&mut self, s: &mut DoWhileStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_try(&mut s.body);
+    }
+
+    fn visit_mut_for_stmt(&mut self, s: &mut ForStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_try(&mut s.body);
+    }
+
+    fn visit_mut_for_in_stmt(&mut self, s: &mut ForInStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_try(&mut s.body);
+    }
+
+    fn visit_mut_for_of_stmt(&mut self, s: &mut ForOfStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_try(&mut s.body);
+    }
+
+    fn visit_mut_labeled_stmt(&mut self, s: &mut LabeledStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_try(&mut s.body);
+    }
+
+    fn visit_mut_with_stmt(&mut self, s: &mut WithStmt) {
+        s.visit_mut_children_with(self);
+        wrap_single_stmt_try(&mut s.body);
     }
 
     fn visit_mut_expr(&mut self, e: &mut Expr) {

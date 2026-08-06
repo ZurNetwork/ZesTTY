@@ -6,14 +6,14 @@ input_file: tests/fixtures/newtype_id_confusion.zts
 // Compiles in zts; tsc must reject BOTH misuses of the branded types
 // (TS2345): a raw string where an AccountId is expected, and a UserId
 // where an AccountId is expected — same underlying type, different brands.
-type AccountId = string & {
+type AccountId = (string) & {
     readonly __ztsNewtype: "AccountId";
 };
-const AccountId = (value: string): AccountId =>value as AccountId;
-type UserId = string & {
+const AccountId = (__ztsValue: string): AccountId =>__ztsValue as AccountId;
+type UserId = (string) & {
     readonly __ztsNewtype: "UserId";
 };
-const UserId = (value: string): UserId =>value as UserId;
+const UserId = (__ztsValue: string): UserId =>__ztsValue as UserId;
 function chargeAccount(id: AccountId): string {
     return id;
 }

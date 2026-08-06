@@ -134,8 +134,10 @@ Load-bearing details, learned the hard way (review-gated, two rounds):
   must not impersonate a domain tagged union).
 
 Arm patterns (Phase 5): besides `Variant { bindings }`, arms take
-string/number/boolean literals (`"active" =>`, `404 =>`, `-1 =>`, `true =>`)
-and a `_` wildcard. A match is either **variant-mode or literal-mode, never
+string/number/bigint/boolean/`null` literals (`"active" =>`, `404 =>`,
+`-1 =>`, `1n =>`, `true =>`, `null =>`) and a `_` wildcard. `undefined` is
+NOT a pattern (it gets a dedicated diagnostic); `0` and `-0` are the same
+arm (they are `===` in JS). A match is either **variant-mode or literal-mode, never
 mixed**; `_` is legal in both but must be the single LAST arm and carries no
 binding. Literal mode drops the `__k` alias — arms test `__m === <lit>` and
 the keystone receives `__m` itself (equality narrowing runs `__m` to `never`
@@ -214,9 +216,21 @@ class becomes a compile error.
 newtype AccountId = string;
 
 // generated TS
-type AccountId = string & { readonly __ztsNewtype: "AccountId" };
-const AccountId = (value: string): AccountId => value as AccountId;
+type AccountId = (string) & { readonly __ztsNewtype: "AccountId" };
+const AccountId = (__ztsValue: string): AccountId => __ztsValue as AccountId;
 ```
+
+The parens around the underlying type are load-bearing: `&` binds tighter
+than `|`, and stock codegen has no type-level fixer — unwrapped, a union
+underlying type would brand only its last member. The factory parameter is
+`__ztsValue` (locked `__zts` prefix): a bare `value` would be captured by
+`typeof value` underlying types.
+
+Known limitation (recorded, open decision for the Engineer): the brand is
+the newtype's NAME, so two `newtype Id = string` declarations in different
+scopes/modules are the same type to tsc. Options if this bites: qualify the
+brand with a module discriminator, or a unique-symbol brand. Until decided,
+same-named newtypes share identity.
 
 The brand property exists only at the type level; the factory is an identity
 cast, so newtypes are **zero runtime cost**. Two newtypes over the same
