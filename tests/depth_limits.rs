@@ -115,6 +115,22 @@ fn diagnostics_are_bounded_on_pathological_input() {
 }
 
 #[test]
+fn deep_binding_pattern_is_a_diagnostic_not_a_crash() {
+    // Security verification V1: 70k-deep nested object binding patterns
+    // used to SIGABRT at parse time (no maybe_grow on pattern recursion)
+    // and were uncounted by the depth budget afterwards.
+    let n = 70_000;
+    let src = format!("const {}a{} = z;\n", "{a:".repeat(n), "}".repeat(n));
+    let err = on_napi_sized_thread(move || compile_source("deep_pat.zts", src, Options::default()))
+        .expect_err("a 70k-deep binding pattern must be rejected");
+    assert!(
+        err.diagnostics.contains("nesting exceeds"),
+        "expected the depth diagnostic, got:\n{}",
+        err.diagnostics
+    );
+}
+
+#[test]
 fn deep_nested_match_is_a_diagnostic_not_a_crash() {
     let n = 3000;
     let mut src = String::from("declare const t: { kind: \"K\"; v: number };\nconst r = ");

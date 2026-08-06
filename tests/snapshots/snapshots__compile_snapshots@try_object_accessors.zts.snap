@@ -1,0 +1,28 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/try_object_accessors.zts
+---
+// Security verification V3: object-literal accessors get real function
+// context — an ANNOTATED getter may use `?` like any other function.
+type R = {
+    kind: "Ok";
+    value: number;
+} | {
+    kind: "Err";
+    error: string;
+};
+declare function g(): R;
+export const o = {
+    get port () {
+        const __t = g();
+        if (__t.kind === "Err") {
+            return __t;
+        }
+        const p = __t.value;
+        return {
+            kind: "Ok",
+            value: p + 1
+        };
+    }
+};

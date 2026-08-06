@@ -364,6 +364,15 @@ fn try_guard_maps_to_original_question_mark() {
 }
 
 #[test]
+fn object_accessor_try_passes_tsc() {
+    // Security verification V3: annotated object-literal getters have
+    // real function context for `?`.
+    let (ts_path, _) = compile_to("try_object_accessors.zts", "exit_try_getter.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected object-accessor try output:\n{text}");
+}
+
+#[test]
 fn arm_body_maps_to_original_span() {
     // Phase 2's "breakpoint in .zts" story depends on arm bodies mapping
     // back to their source, not just the absurd call.

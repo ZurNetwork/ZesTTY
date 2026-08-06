@@ -228,7 +228,9 @@ underlying type would brand only its last member. The factory parameter is
 
 Known limitation (recorded, open decision for the Engineer): the brand is
 the newtype's NAME, so two `newtype Id = string` declarations in different
-scopes/modules are the same type to tsc. Options if this bites: qualify the
+scopes/modules are the same type to tsc — and the brand is structurally
+forgeable without a cast (`Object.assign("raw", { __ztsNewtype:
+"AccountId" as const })` type-checks). Options if this bites: qualify the
 brand with a module discriminator, or a unique-symbol brand. Until decided,
 same-named newtypes share identity.
 
@@ -277,7 +279,9 @@ void-contextual callback like `xs.forEach(x => ...)` TypeScript accepts any
 returned value, so an inferred return type would let the Err vanish
 silently). `?` is also banned in generators (the early return would become
 TReturn) and setters (cannot return a value); both get dedicated
-diagnostics.
+diagnostics. Boundary: an annotation of `any` (or a return type absorbing
+the Err some other way) satisfies the rule syntactically but voids the
+check — `any` is outside every zts guarantee, not just this one.
 
 Parse rule (locked): `?` is a try operator ONLY where a ternary is
 impossible — immediately before `;` `)` `,` `]`. One-token lookahead, fully
