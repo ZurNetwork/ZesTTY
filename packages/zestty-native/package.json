@@ -1,6 +1,12 @@
 {
   "name": "@zestty/native",
   "version": "0.2.0",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
   "description": "Native (napi) binding to the zestty compiler. Linux x64 only for now; run `npm run build:native` at the repo root to (re)build.",
   "type": "module",
   "main": "index.js",
