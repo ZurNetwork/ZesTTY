@@ -1,6 +1,6 @@
 {
   "name": "@zestty/language-server",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "LSP for ZesTTY (zts): serves compiled TypeScript twins to tsserver's LanguageService and remaps diagnostics, hover, and definitions through the sourcemaps back to the .zts source (Civet's approach).",
   "type": "module",
   "main": "lib.js",
@@ -15,7 +15,7 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@zestty/native": "^0.3.0",
+    "@zestty/native": "^0.3.1",
     "source-map-js": "^1.2.0",
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12",
