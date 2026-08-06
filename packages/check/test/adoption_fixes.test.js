@@ -108,6 +108,37 @@ test("#16b: --twins regenerates in place, marks output, reports orphans", () => 
   }
 });
 
+test("#45: --twins emits a committed sourcemap next to each twin", () => {
+  const dir = mkdtempSync(join(tmpdir(), "zts-twinsmap-"));
+  try {
+    writeFileSync(
+      join(dir, "a.zts"),
+      "export const n: number = if (true as boolean) { 1 } else { 2 };\n",
+    );
+    const code = generateTwins(dir, { log: () => {} });
+    assert.equal(code, 0);
+    const twin = readFileSync(join(dir, "a.ts"), "utf8");
+    assert.match(twin, /\/\/# sourceMappingURL=a\.ts\.map\n$/);
+    const map = JSON.parse(readFileSync(join(dir, "a.ts.map"), "utf8"));
+    // Committed artifacts are machine-independent and diff-quiet:
+    // sibling-relative source, no embedded sourcesContent.
+    assert.deepEqual(map.sources, ["a.zts"]);
+    assert.equal(map.file, "a.ts");
+    assert.equal(map.sourcesContent, undefined);
+    // Shifted for the @generated header line the fresh compile lacks.
+    assert.match(map.mappings, /^;/);
+    // And the map-carrying twin still passes a plain check (not stale).
+    const lines = [];
+    assert.equal(
+      ztsCheck(dir, { log: (l) => lines.push(l) }),
+      0,
+      lines.join("\n"),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("#16b: committed marker twin still maps diagnostics to correct lines", () => {
   const dir = mkdtempSync(join(tmpdir(), "zts-twinmap-"));
   try {
