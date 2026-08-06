@@ -162,6 +162,45 @@ fn missing_arm_fails_tsc_even_without_strict() {
 }
 
 #[test]
+fn literal_match_passes_tsc() {
+    let (ts_path, _) = compile_to("match_literal.zts", "exit_literal.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected literal-mode match output:\n{text}");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        !code.contains("__k"),
+        "literal mode must not emit the `.kind` alias:\n{code}"
+    );
+}
+
+#[test]
+fn missing_literal_arm_fails_tsc_naming_the_literal() {
+    // The literal-mode keystone: equality narrowing runs `__m` to `never`
+    // only when every literal has an arm. Must hold without --strict too.
+    let (ts_path, _) = compile_to("match_missing_literal_arm.zts", "exit_missing_lit.ts");
+    let (ok, text) = tsc_with(&ts_path, &[]);
+    assert!(!ok, "literal keystone must hold without --strict");
+    assert!(
+        text.contains("error TS2345") && text.contains("\"warn\""),
+        "tsc must name the missing literal:\n{text}"
+    );
+}
+
+#[test]
+fn wildcard_match_passes_tsc_and_disables_keystone() {
+    let (ts_path, _) = compile_to("match_wildcard.zts", "exit_wildcard.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected wildcard match output:\n{text}");
+    // Two variants are deliberately unhandled; `_` must have replaced the
+    // absurd tail, so no keystone (and no helper) appears at all.
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        !code.contains("__ztsAbsurd"),
+        "wildcard arm must remove the exhaustiveness keystone:\n{code}"
+    );
+}
+
+#[test]
 fn arm_body_maps_to_original_span() {
     // Phase 2's "breakpoint in .zts" story depends on arm bodies mapping
     // back to their source, not just the absurd call.

@@ -1,0 +1,35 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/match_wildcard.zts
+---
+type AppEvent = {
+    kind: "Click";
+    x: number;
+    y: number;
+} | {
+    kind: "Key";
+    code: string;
+} | {
+    kind: "Scroll";
+    delta: number;
+} | {
+    kind: "Resize";
+    w: number;
+    h: number;
+};
+declare const ev: AppEvent;
+// `_` replaces the exhaustiveness keystone: unlisted variants fall through.
+const label = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "Click") {
+        const { x, y } = __m;
+        return `click ${x},${y}`;
+    }
+    if (__k === "Key") {
+        const { code } = __m;
+        return `key ${code}`;
+    }
+    return "other";
+})(ev);
+console.log(label);

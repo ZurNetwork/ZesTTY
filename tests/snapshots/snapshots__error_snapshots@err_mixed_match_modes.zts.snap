@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_mixed_match_modes.zts
+---
+error: cannot mix literal arms and variant arms in one match
+ --> tests/fixtures/errors/err_mixed_match_modes.zts:7:3
+  |
+7 |   "B" => 0,
+  |   ^^^

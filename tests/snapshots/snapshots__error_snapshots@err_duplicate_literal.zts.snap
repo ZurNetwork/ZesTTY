@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_duplicate_literal.zts
+---
+error: duplicate literal match arm
+ --> tests/fixtures/errors/err_duplicate_literal.zts:7:3
+  |
+7 |   "a" => 2,
+  |   ^^^

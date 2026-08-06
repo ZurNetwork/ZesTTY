@@ -1,0 +1,16 @@
+type AppEvent =
+  | { kind: "Click"; x: number; y: number }
+  | { kind: "Key"; code: string }
+  | { kind: "Scroll"; delta: number }
+  | { kind: "Resize"; w: number; h: number };
+
+declare const ev: AppEvent;
+
+// `_` replaces the exhaustiveness keystone: unlisted variants fall through.
+const label = match (ev) {
+  Click { x, y } => `click ${x},${y}`,
+  Key { code } => `key ${code}`,
+  _ => "other",
+};
+
+console.log(label);

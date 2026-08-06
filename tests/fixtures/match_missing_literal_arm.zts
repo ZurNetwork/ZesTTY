@@ -1,0 +1,12 @@
+// Compiles in zts; tsc must reject the generated TS because the "warn"
+// literal has no arm (TS2345: '"warn"' is not assignable to 'never').
+type Level = "debug" | "info" | "warn";
+
+declare const level: Level;
+
+const rank = match (level) {
+  "debug" => 0,
+  "info" => 1,
+};
+
+console.log(rank);
