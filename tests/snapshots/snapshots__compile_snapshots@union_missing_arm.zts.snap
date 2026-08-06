@@ -1,0 +1,31 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/union_missing_arm.zts
+---
+function __ztsAbsurd(x: never): never {
+    throw globalThis.Object.assign(new globalThis.Error("zts: non-exhaustive match"), {
+        ztsTag: x
+    });
+}
+// Compiles in zts; tsc must reject the match — 'error' has no arm.
+type Level = 'info' | 'warn' | 'error';
+const Level = {
+    values: [
+        'info',
+        'warn',
+        'error'
+    ] as const,
+    has: (__ztsRaw: string): __ztsRaw is Level =>Level.values.includes(__ztsRaw as Level)
+};
+declare const l: Level;
+const rank = ((__m)=>{
+    if (__m === 'info') {
+        return 0;
+    }
+    if (__m === 'warn') {
+        return 1;
+    }
+    return __ztsAbsurd(__m);
+})(l);
+console.log(rank);

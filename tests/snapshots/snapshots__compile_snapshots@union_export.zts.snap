@@ -1,0 +1,17 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/union_export.zts
+---
+export type Level = 'info' | 'warn' | 'error';
+export const Level = {
+    values: [
+        'info',
+        'warn',
+        'error'
+    ] as const,
+    has: (__ztsRaw: string): __ztsRaw is Level =>Level.values.includes(__ztsRaw as Level)
+};
+// Hoisting: use-before-declaration works, and export covers both halves.
+const early = Level.has('warn');
+console.log(early, Level.values);
