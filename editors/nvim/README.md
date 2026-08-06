@@ -46,6 +46,43 @@ opts = {
 }
 ```
 
+## Go-to-definition from consumers (committed twins)
+
+In committed-twins mode, imports from `.ts`/`.svelte` consumers resolve
+to the generated `.ts` twin, so go-to-definition is answered by tsserver
+— not by `@zestty/language-server` — and would land in generated code
+(issue #45). `typescript-zestty-plugin` fixes that inside tsserver
+itself: it remaps definition spans from `@generated` twins to the
+sibling `.zts` through the `.ts.map` the twin ships with.
+
+Editor-agnostic enablement — install the plugin in the consumer repo and
+declare it in `tsconfig.json`; every tsserver-based tool inherits it:
+
+```jsonc
+// npm i -D typescript-zestty-plugin
+{
+  "compilerOptions": {
+    "plugins": [{ "name": "typescript-zestty-plugin" }],
+  },
+}
+```
+
+Or globally for Neovim's TypeScript LSP without touching the repo:
+
+```lua
+vim.lsp.config("ts_ls", {
+  init_options = {
+    plugins = {
+      {
+        name = "typescript-zestty-plugin",
+        location = vim.fn.expand("~/code/zts/packages/typescript-plugin"),
+        languages = { "typescript" },
+      },
+    },
+  },
+})
+```
+
 ## Notes
 
 - Filetype registration lives in `ftdetect/zts.lua`, which plugin

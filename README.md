@@ -449,6 +449,18 @@ arm body is a compile error until arms can lower to async IIFEs.
   bindings against zts script members are fully type-checked, with
   diagnostics remapped to original positions. Put `zts-check` in CI next
   to your build; `--no-svelte` skips the component pass if you need to.
+- **Go-to-definition from consumers lands in the `.zts`, not the twin**
+  (issue #45). In committed-twins mode tsserver answers definition
+  queries with the generated `.ts`; `typescript-zestty-plugin` (a TS
+  Language Service plugin, same pattern as `typescript-svelte-plugin`)
+  intercepts them and remaps the span to the sibling `.zts` through the
+  `.ts.map` that `zts-check --twins` now emits next to each twin
+  (whole-word symbol search when a twin has no map). Enable it per repo
+  via `tsconfig.json` → `compilerOptions.plugins: [{ "name":
+"typescript-zestty-plugin" }]` (plus `npm i -D typescript-zestty-plugin`);
+  the VS Code extension bundles it automatically. The committed `.ts.map`
+  is machine-independent (sibling-relative `sources`, no
+  `sourcesContent`) and inert to staleness checks and orphan scans.
 
 ### Phase 5 — Result ergonomics + identity safety (approved by Zuri, 2026-08-06)
 
