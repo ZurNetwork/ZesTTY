@@ -49,6 +49,15 @@ const NumRes = {
             error
         })
 };
+// union: runtime values + membership guard.
+type Grade = 'low' | 'high';
+const Grade = {
+    values: [
+        'low',
+        'high'
+    ] as const,
+    has: (__ztsRaw: string): __ztsRaw is Grade =>Grade.values.includes(__ztsRaw as Grade)
+};
 // Executed by tests/tsc_exit.rs under node: every zts construct here must
 // produce the RIGHT VALUE at runtime, not merely typecheck. Guards against
 // precedence miscompiles that tsc cannot see.
@@ -273,4 +282,17 @@ const none = ((__m)=>{
     return "some";
 })(null as string | null);
 expect("null match", none, "none");
+expect("union values", Grade.values.join(","), "low,high");
+expect("union has yes", Grade.has("low"), true);
+expect("union has no", Grade.has("mid"), false);
+const g = Grade.has("high") ? "high" : "low";
+expect("union guard", ((__m)=>{
+    if (__m === 'low') {
+        return 0;
+    }
+    if (__m === 'high') {
+        return 1;
+    }
+    return __ztsAbsurd(__m);
+})(g), 1);
 console.log("exec_semantics: all assertions passed");

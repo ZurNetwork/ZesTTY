@@ -1,0 +1,20 @@
+// Closed string-literal vocabulary: type + runtime values + type guard.
+union DeleteOutcome = 'soft' | 'hard' | 'unknown';
+
+// The wire-normalizer nuisance this kills: has() narrows, no hand-listed
+// literals, and the wildcard is the R8 fail-closed fallback.
+export function toDeleteOutcome(raw: string): DeleteOutcome {
+  return DeleteOutcome.has(raw) ? raw : 'unknown';
+}
+
+// Exhaustive literal match still applies — no wildcard needed on the
+// closed side.
+export function describe(o: DeleteOutcome): string {
+  return match (o) {
+    'soft' => 'kept',
+    'hard' => 'gone',
+    'unknown' => 'unclear',
+  };
+}
+
+console.log(DeleteOutcome.values.length, describe(toDeleteOutcome('soft')));
