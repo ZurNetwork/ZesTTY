@@ -1,0 +1,33 @@
+type Level = "debug" | "info" | "warn" | "error";
+type Code = -1 | 0 | 1;
+
+declare const level: Level;
+declare const code: Code;
+declare const flag: boolean;
+
+// Exhaustive literal match: no wildcard needed, keystone still fires on a
+// missing literal.
+const rank = match (level) {
+  "debug" => 0,
+  "info" => 1,
+  "warn" => 2,
+  "error" => 3,
+};
+
+// Numbers, including a negative literal.
+const sign = match (code) {
+  -1 => "neg",
+  0 => "zero",
+  1 => "pos",
+};
+
+// Booleans, block arm body, and a wildcard tail.
+const desc = match (flag) {
+  true => {
+    const base = "yes";
+    base.toUpperCase()
+  },
+  _ => "NO",
+};
+
+console.log(rank, sign, desc);

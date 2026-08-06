@@ -1,0 +1,8 @@
+type T = { kind: "_"; n: number } | { kind: "B"; m: number };
+
+declare const t: T;
+
+const bad = match (t) {
+  _ { n } => n,
+  B { m } => m,
+};

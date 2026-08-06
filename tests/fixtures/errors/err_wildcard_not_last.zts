@@ -1,0 +1,9 @@
+type Level = "a" | "b" | "c";
+
+declare const level: Level;
+
+const bad = match (level) {
+  "a" => 1,
+  _ => 0,
+  "b" => 2,
+};

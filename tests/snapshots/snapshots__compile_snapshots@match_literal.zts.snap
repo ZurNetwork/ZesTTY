@@ -1,0 +1,54 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/match_literal.zts
+---
+function __ztsAbsurd(x: never): never {
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
+}
+type Level = "debug" | "info" | "warn" | "error";
+type Code = -1 | 0 | 1;
+declare const level: Level;
+declare const code: Code;
+declare const flag: boolean;
+// Exhaustive literal match: no wildcard needed, keystone still fires on a
+// missing literal.
+const rank = ((__m)=>{
+    if (__m === "debug") {
+        return 0;
+    }
+    if (__m === "info") {
+        return 1;
+    }
+    if (__m === "warn") {
+        return 2;
+    }
+    if (__m === "error") {
+        return 3;
+    }
+    return __ztsAbsurd(__m);
+})(level);
+// Numbers, including a negative literal.
+const sign = ((__m)=>{
+    if (__m === -1) {
+        return "neg";
+    }
+    if (__m === 0) {
+        return "zero";
+    }
+    if (__m === 1) {
+        return "pos";
+    }
+    return __ztsAbsurd(__m);
+})(code);
+// Booleans, block arm body, and a wildcard tail.
+const desc = ((__m)=>{
+    if (__m === true) {
+        const base = "yes";
+        return base.toUpperCase();
+    }
+    return "NO";
+})(flag);
+console.log(rank, sign, desc);

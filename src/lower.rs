@@ -47,6 +47,16 @@
 //! against every global" are fundamentally in tension; module code that
 //! shadows `globalThis` itself is far outside anything we defend against.
 //!
+//! Phase 5 pattern arms extend the same shape:
+//! - Literal mode (`match (x) { "a" => ..., 1 => ..., }`) drops the `__k`
+//!   alias entirely — arms test `__m === <lit>` and the keystone receives
+//!   `__m` itself. Equality narrowing eliminates each literal from `__m`'s
+//!   union, so an exhaustive literal match narrows `__m` to `never`; there
+//!   is no `.kind` access anywhere, so non-object discriminants type-check.
+//! - A `_ =>` wildcard arm REPLACES the `return __ztsAbsurd(...)` tail (its
+//!   body becomes the fall-through), which deliberately disables the
+//!   exhaustiveness keystone — that is the semantics the author asked for.
+//!
 //! Original spans are preserved on every node that has a source
 //! counterpart; only glue (the IIFE scaffolding identifiers) is synthetic.
 //! Generated identifiers get a fresh `Mark`, and the `hygiene()` pass that
@@ -68,6 +78,29 @@ struct Lower {
     absurd: Option<Ident>,
 }
 
+/// Append an arm body as trailing statements: a block body splices its
+/// statements straight in (no extra IIFE) and returns the tail; any other
+/// body becomes a single `return`.
+fn push_body_as_return(stmts: &mut Vec<Stmt>, body: Expr) {
+    match body {
+        Expr::ZtsExprBlock(block) => {
+            stmts.extend(block.stmts);
+            let tail_span = block.tail.span();
+            stmts.push(Stmt::Return(ReturnStmt {
+                span: tail_span,
+                arg: Some(block.tail),
+            }));
+        }
+        body => {
+            let body_span = body.span();
+            stmts.push(Stmt::Return(ReturnStmt {
+                span: body_span,
+                arg: Some(Box::new(body)),
+            }));
+        }
+    }
+}
+
 impl Lower {
     fn absurd_ident(&mut self) -> Ident {
         self.absurd
@@ -83,56 +116,86 @@ impl Lower {
         } = m;
 
         // `__m`/`__k`, one fresh mark per match so nested matches stay
-        // distinct.
+        // distinct. `__k` exists only in variant mode: literal (and
+        // wildcard-only) matches never touch `.kind`, so the alias would be
+        // a type error on non-object discriminants.
         let m_ident = private_ident!("__m");
-        let k_ident = private_ident!("__k");
+        let variant_mode = arms
+            .iter()
+            .any(|a| matches!(a.pattern, MatchPat::Variant(..)));
+        let k_ident = variant_mode.then(|| private_ident!("__k"));
 
         let mut stmts: Vec<Stmt> = Vec::with_capacity(arms.len() + 2);
 
         // const __k = __m.kind;
         let disc_span = discriminant.span();
-        stmts.push(
-            VarDecl {
-                span: disc_span,
-                ctxt: SyntaxContext::empty(),
-                kind: VarDeclKind::Const,
-                declare: false,
-                decls: vec![VarDeclarator {
+        if let Some(k_ident) = &k_ident {
+            stmts.push(
+                VarDecl {
                     span: disc_span,
-                    name: Pat::Ident(k_ident.clone().into()),
-                    init: Some(Box::new(Expr::Member(MemberExpr {
+                    ctxt: SyntaxContext::empty(),
+                    kind: VarDeclKind::Const,
+                    declare: false,
+                    decls: vec![VarDeclarator {
                         span: disc_span,
-                        obj: Box::new(Expr::Ident(m_ident.clone())),
-                        prop: MemberProp::Ident(IdentName::new(atom!("kind"), disc_span)),
-                    }))),
-                    definite: false,
-                }],
-            }
-            .into(),
-        );
-
-        for arm in arms {
-            stmts.push(self.lower_arm(&m_ident, &k_ident, arm));
+                        name: Pat::Ident(k_ident.clone().into()),
+                        init: Some(Box::new(Expr::Member(MemberExpr {
+                            span: disc_span,
+                            obj: Box::new(Expr::Ident(m_ident.clone())),
+                            prop: MemberProp::Ident(IdentName::new(atom!("kind"), disc_span)),
+                        }))),
+                        definite: false,
+                    }],
+                }
+                .into(),
+            );
         }
 
-        // return __ztsAbsurd(__k);
-        let absurd = self.absurd_ident();
-        stmts.push(Stmt::Return(ReturnStmt {
-            span,
-            arg: Some(Box::new(Expr::Call(CallExpr {
+        // Semantic checking guarantees a wildcard is the single last arm.
+        let mut wildcard_body: Option<Box<Expr>> = None;
+        for arm in arms {
+            let MatchArm {
+                span: arm_span,
+                pattern,
+                body,
+            } = arm;
+            match pattern {
+                MatchPat::Wildcard(..) => wildcard_body = Some(body),
+                MatchPat::Variant(v) => {
+                    let k_ident = k_ident.as_ref().expect("variant arm implies variant mode");
+                    stmts.push(self.lower_variant_arm(&m_ident, k_ident, arm_span, v, *body));
+                }
+                MatchPat::Lit(l) => {
+                    stmts.push(self.lower_lit_arm(&m_ident, arm_span, l, *body));
+                }
+            }
+        }
+
+        if let Some(body) = wildcard_body {
+            // `_ =>` body is the fall-through tail; no keystone.
+            push_body_as_return(&mut stmts, *body);
+        } else {
+            // return __ztsAbsurd(__k); — or __ztsAbsurd(__m) in literal
+            // mode, where equality narrowing has run __m itself to never.
+            let absurd = self.absurd_ident();
+            let keystone = match &k_ident {
+                Some(k) => k.clone(),
+                None => m_ident.clone(),
+            };
+            stmts.push(Stmt::Return(ReturnStmt {
                 span,
-                ctxt: SyntaxContext::empty(),
-                callee: Callee::Expr(Box::new(Expr::Ident(absurd))),
-                args: vec![ExprOrSpread {
-                    spread: None,
-                    expr: Box::new(Expr::Ident(Ident {
-                        span,
-                        ..k_ident.clone()
-                    })),
-                }],
-                type_args: None,
-            }))),
-        }));
+                arg: Some(Box::new(Expr::Call(CallExpr {
+                    span,
+                    ctxt: SyntaxContext::empty(),
+                    callee: Callee::Expr(Box::new(Expr::Ident(absurd))),
+                    args: vec![ExprOrSpread {
+                        spread: None,
+                        expr: Box::new(Expr::Ident(Ident { span, ..keystone })),
+                    }],
+                    type_args: None,
+                }))),
+            }));
+        }
 
         // ((__m) => { ... })(<discriminant>)
         let arrow = ArrowExpr {
@@ -165,26 +228,29 @@ impl Lower {
         })
     }
 
-    /// One arm: `if (__k === "Variant") { const { ... } = __m; return body; }`
-    fn lower_arm(&mut self, m_ident: &Ident, k_ident: &Ident, arm: MatchArm) -> Stmt {
-        let MatchArm {
-            span,
-            variant,
-            binding,
-            body,
-        } = arm;
+    /// One variant arm:
+    /// `if (__k === "Variant") { const { ... } = __m; return body; }`
+    fn lower_variant_arm(
+        &mut self,
+        m_ident: &Ident,
+        k_ident: &Ident,
+        span: Span,
+        pat: MatchVariantPat,
+        body: Expr,
+    ) -> Stmt {
+        let MatchVariantPat { name, binding, .. } = pat;
 
         // __k === "Variant"
         let test = Expr::Bin(BinExpr {
-            span: variant.span,
+            span: name.span,
             op: BinaryOp::EqEqEq,
             left: Box::new(Expr::Ident(Ident {
-                span: variant.span,
+                span: name.span,
                 ..k_ident.clone()
             })),
             right: Box::new(Expr::Lit(Lit::Str(Str {
-                span: variant.span,
-                value: variant.sym.clone().into(),
+                span: name.span,
+                value: name.sym.clone().into(),
                 raw: None,
             }))),
         });
@@ -214,25 +280,51 @@ impl Lower {
             );
         }
 
-        match *body {
-            // Block-bodied arm: splice the statements straight into the
-            // arm's `if` block — no extra IIFE needed.
-            Expr::ZtsExprBlock(block) => {
-                cons_stmts.extend(block.stmts);
-                let tail_span = block.tail.span();
-                cons_stmts.push(Stmt::Return(ReturnStmt {
-                    span: tail_span,
-                    arg: Some(block.tail),
-                }));
-            }
-            body => {
-                let body_span = body.span();
-                cons_stmts.push(Stmt::Return(ReturnStmt {
-                    span: body_span,
-                    arg: Some(Box::new(body)),
-                }));
-            }
-        }
+        push_body_as_return(&mut cons_stmts, body);
+
+        Stmt::If(IfStmt {
+            span,
+            test: Box::new(test),
+            cons: Box::new(Stmt::Block(BlockStmt {
+                span,
+                ctxt: SyntaxContext::empty(),
+                stmts: cons_stmts,
+            })),
+            alt: None,
+        })
+    }
+
+    /// One literal arm: `if (__m === <lit>) { return body; }`
+    fn lower_lit_arm(&mut self, m_ident: &Ident, span: Span, pat: MatchLitPat, body: Expr) -> Stmt {
+        let MatchLitPat {
+            span: pat_span,
+            lit,
+            neg,
+        } = pat;
+
+        let lit_expr = if neg {
+            Expr::Unary(UnaryExpr {
+                span: pat_span,
+                op: UnaryOp::Minus,
+                arg: Box::new(Expr::Lit(lit)),
+            })
+        } else {
+            Expr::Lit(lit)
+        };
+
+        // __m === <lit>
+        let test = Expr::Bin(BinExpr {
+            span: pat_span,
+            op: BinaryOp::EqEqEq,
+            left: Box::new(Expr::Ident(Ident {
+                span: pat_span,
+                ..m_ident.clone()
+            })),
+            right: Box::new(lit_expr),
+        });
+
+        let mut cons_stmts: Vec<Stmt> = Vec::with_capacity(1);
+        push_body_as_return(&mut cons_stmts, body);
 
         Stmt::If(IfStmt {
             span,

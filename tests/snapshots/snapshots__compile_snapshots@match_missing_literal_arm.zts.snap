@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/match_missing_literal_arm.zts
+---
+function __ztsAbsurd(x: never): never {
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
+}
+// Compiles in zts; tsc must reject the generated TS because the "warn"
+// literal has no arm (TS2345: '"warn"' is not assignable to 'never').
+type Level = "debug" | "info" | "warn";
+declare const level: Level;
+const rank = ((__m)=>{
+    if (__m === "debug") {
+        return 0;
+    }
+    if (__m === "info") {
+        return 1;
+    }
+    return __ztsAbsurd(__m);
+})(level);
+console.log(rank);
