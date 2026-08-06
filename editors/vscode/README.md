@@ -10,6 +10,11 @@ superset of TypeScript with compiler-enforced exhaustiveness.
   are left alone), enums-with-data variant and field scopes.
 - Language configuration: brackets, comments, auto-closing pairs,
   indentation.
+- Committed-twins go-to-definition (issue #45): the bundled
+  `typescript-zestty-plugin` teaches VS Code's own tsserver that a
+  definition landing in `zts-check --twins` output belongs to the
+  sibling `.zts` — so jumping from any `.ts`/`.svelte` consumer opens
+  the source you edit, not the generated twin.
 
 ## Install (from source, until it's on the marketplace)
 

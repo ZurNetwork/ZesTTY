@@ -1,0 +1,27 @@
+{
+  "name": "typescript-zestty-plugin",
+  "version": "0.3.1",
+  "description": "TypeScript Language Service plugin for ZesTTY (zts): remaps go-to-definition results that land in committed `zts-check --twins` output back to the sibling .zts source, via the twin's sourcemap (symbol search fallback). Same pattern as typescript-svelte-plugin.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "source-map-js": "^1.2.0"
+  },
+  "devDependencies": {
+    "@zestty/check": "^0.3.1"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZurNetwork/ZesTTY.git",
+    "directory": "packages/typescript-plugin"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "index.js"
+  ]
+}
