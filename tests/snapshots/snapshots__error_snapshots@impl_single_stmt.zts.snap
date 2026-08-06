@@ -1,0 +1,15 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/impl_single_stmt.zts
+---
+error: an impl must be a top-level statement of the module or block that declares its enum
+  --> tests/fixtures/errors/impl_single_stmt.zts:7:11
+   |
+7  |   if (true) impl Display for Shape {
+   |  ___________^
+8  | |   fn fmt(self): string {
+9  | |     return "";
+10 | |   }
+11 | | }
+   | |_^

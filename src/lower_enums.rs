@@ -165,8 +165,98 @@ fn variant_factory(enum_ident: &Ident, variant: &ZtsEnumVariant) -> PropOrSpread
     })))
 }
 
-/// One zts enum → (type alias, factory const).
-fn lower_enum(e: &ZtsEnumDecl) -> (Decl, Decl) {
+/// `name(self: Enum, ...): Ret { body }` — one impl method as a factory
+/// object member (Phase 6 traits). The bare `self` receiver gets the enum
+/// type HERE — the parser guarantees it carried none — so method bodies
+/// see a fully typed value while the source stays annotation-free.
+fn impl_method_prop(enum_ident: &Ident, mut method: ZtsImplMethod) -> PropOrSpread {
+    if let Some(Param {
+        pat: Pat::Ident(self_pat),
+        ..
+    }) = method.function.params.first_mut()
+    {
+        self_pat.type_ann = Some(Box::new(TsTypeAnn {
+            span: self_pat.id.span,
+            type_ann: Box::new(TsType::TsTypeRef(TsTypeRef {
+                span: self_pat.id.span,
+                type_name: TsEntityName::Ident(enum_ident.clone()),
+                type_params: None,
+            })),
+        }));
+    }
+    PropOrSpread::Prop(Box::new(Prop::Method(MethodProp {
+        key: PropName::Ident(IdentName::new(method.name.sym.clone(), method.name.span)),
+        function: method.function,
+    })))
+}
+
+/// `{ [key: string]: unknown } & Display<Shape> & ...` — the `satisfies`
+/// type for a factory const carrying impls.
+///
+/// The index-signature member is load-bearing: `satisfies` runs
+/// excess-property checking on fresh object literals, so without it the
+/// variant factories themselves would be rejected as excess against the
+/// trait type. It is written as an inline type literal, NOT `Record` — a
+/// user shadow of `Record` would silently change what conformance means
+/// (hygiene is not TS-type-aware; same reasoning as the globalThis rule).
+/// Each trait ref is the conformance obligation, checked entirely by tsc
+/// and erased by emit.
+fn impl_satisfies_type(enum_ident: &Ident, impls: &[ZtsImplDecl]) -> Box<TsType> {
+    let span = enum_ident.span;
+    let string_ann = Box::new(TsTypeAnn {
+        span,
+        type_ann: Box::new(TsType::TsKeywordType(TsKeywordType {
+            span,
+            kind: TsKeywordTypeKind::TsStringKeyword,
+        })),
+    });
+    let unknown_ann = Box::new(TsTypeAnn {
+        span,
+        type_ann: Box::new(TsType::TsKeywordType(TsKeywordType {
+            span,
+            kind: TsKeywordTypeKind::TsUnknownKeyword,
+        })),
+    });
+    let absorber = Box::new(TsType::TsTypeLit(TsTypeLit {
+        span,
+        members: vec![TsTypeElement::TsIndexSignature(TsIndexSignature {
+            span,
+            params: vec![TsFnParam::Ident(BindingIdent {
+                id: Ident::new_no_ctxt(atom!("key"), span),
+                type_ann: Some(string_ann),
+            })],
+            type_ann: Some(unknown_ann),
+            readonly: false,
+            is_static: false,
+        })],
+    }));
+
+    let mut types: Vec<Box<TsType>> = Vec::with_capacity(impls.len() + 1);
+    types.push(absorber);
+    for i in impls {
+        types.push(Box::new(TsType::TsTypeRef(TsTypeRef {
+            span: i.trait_ident.span,
+            type_name: TsEntityName::Ident(i.trait_ident.clone()),
+            type_params: Some(Box::new(TsTypeParamInstantiation {
+                span: i.for_ident.span,
+                params: vec![Box::new(TsType::TsTypeRef(TsTypeRef {
+                    span: i.for_ident.span,
+                    type_name: TsEntityName::Ident(enum_ident.clone()),
+                    type_params: None,
+                }))],
+            })),
+        })));
+    }
+
+    Box::new(TsType::TsUnionOrIntersectionType(
+        TsUnionOrIntersectionType::TsIntersectionType(TsIntersectionType { span, types }),
+    ))
+}
+
+/// One zts enum → (type alias, factory const). Any impls for it merge
+/// into the factory: their methods become object members and the const's
+/// initializer gains `satisfies <absorber> & Trait<Enum> & ...`.
+fn lower_enum(e: &ZtsEnumDecl, impls: Vec<ZtsImplDecl>) -> (Decl, Decl) {
     let union_ty: Box<TsType> = match e.variants.len() {
         // `enum Never {}` — the empty union.
         0 => Box::new(TsType::TsKeywordType(TsKeywordType {
@@ -194,6 +284,36 @@ fn lower_enum(e: &ZtsEnumDecl) -> (Decl, Decl) {
         type_ann: union_ty,
     }));
 
+    let mut props: Vec<PropOrSpread> = e
+        .variants
+        .iter()
+        .map(|v| variant_factory(&e.ident, v))
+        .collect();
+    let satisfies = if impls.is_empty() {
+        None
+    } else {
+        Some(impl_satisfies_type(&e.ident, &impls))
+    };
+    for i in impls {
+        let ZtsImplDecl { methods, .. } = i;
+        for method in methods {
+            props.push(impl_method_prop(&e.ident, method));
+        }
+    }
+
+    let obj = Expr::Object(ObjectLit {
+        span: e.span,
+        props,
+    });
+    let init = match satisfies {
+        None => obj,
+        Some(type_ann) => Expr::TsSatisfies(TsSatisfiesExpr {
+            span: e.span,
+            expr: Box::new(obj),
+            type_ann,
+        }),
+    };
+
     let factories = Decl::Var(Box::new(VarDecl {
         span: e.span,
         ctxt: SyntaxContext::empty(),
@@ -202,14 +322,7 @@ fn lower_enum(e: &ZtsEnumDecl) -> (Decl, Decl) {
         decls: vec![VarDeclarator {
             span: e.span,
             name: Pat::Ident(e.ident.clone().into()),
-            init: Some(Box::new(Expr::Object(ObjectLit {
-                span: e.span,
-                props: e
-                    .variants
-                    .iter()
-                    .map(|v| variant_factory(&e.ident, v))
-                    .collect(),
-            }))),
+            init: Some(Box::new(init)),
             definite: false,
         }],
     }));
@@ -533,13 +646,33 @@ fn stmts_hoist_index(stmts: &[Stmt]) -> usize {
 }
 
 /// If `decl` is a zts construct that expands to two declarations, lower it.
-fn lower_zts_decl(decl: Decl) -> Result<(Decl, Decl), Decl> {
+/// An enum takes (and consumes) its impls from `impls`.
+fn lower_zts_decl(decl: Decl, impls: &mut Vec<ZtsImplDecl>) -> Result<(Decl, Decl), Decl> {
     match decl {
-        Decl::ZtsEnum(e) => Ok(lower_enum(&e)),
+        Decl::ZtsEnum(e) => {
+            let mine = take_impls_for(impls, &e.ident);
+            Ok(lower_enum(&e, mine))
+        }
         Decl::ZtsNewtype(n) => Ok(lower_newtype(&n)),
         Decl::ZtsUnion(u) => Ok(lower_union(&u)),
         other => Err(other),
     }
+}
+
+/// Drain the impls targeting `ident` out of the pool, preserving source
+/// order (method merge order is the impls' order in the file).
+fn take_impls_for(impls: &mut Vec<ZtsImplDecl>, ident: &Ident) -> Vec<ZtsImplDecl> {
+    let mut mine = Vec::new();
+    let mut rest = Vec::new();
+    for i in impls.drain(..) {
+        if i.for_ident.sym == ident.sym {
+            mine.push(i);
+        } else {
+            rest.push(i);
+        }
+    }
+    *impls = rest;
+    mine
 }
 
 fn is_zts_decl(decl: &Decl) -> bool {
@@ -566,31 +699,50 @@ impl VisitMut for LowerEnums {
             return;
         }
 
+        // Pool the impls first: they may precede or follow their enum in
+        // the file, and each merges into its enum's factory. Semantic has
+        // already guaranteed every impl matches an enum in this list — a
+        // leftover would reach codegen's unreachable!, the designed
+        // tripwire for embedders that skip the semantic pass.
+        let mut impls: Vec<ZtsImplDecl> = Vec::new();
         let mut hoisted: Vec<ModuleItem> = Vec::new();
         let mut out: Vec<ModuleItem> = Vec::with_capacity(items.len());
         for item in items.drain(..) {
             match item {
+                ModuleItem::Stmt(Stmt::Decl(Decl::ZtsImpl(i))) => impls.push(*i),
+                other => out.push(other),
+            }
+        }
+        let mut rest: Vec<ModuleItem> = Vec::with_capacity(out.len());
+        for item in out.drain(..) {
+            match item {
                 ModuleItem::Stmt(Stmt::Decl(d)) if is_zts_decl(&d) => {
-                    let (ty, factories) = lower_zts_decl(d).unwrap();
+                    let (ty, factories) = lower_zts_decl(d, &mut impls).unwrap();
                     hoisted.push(ModuleItem::Stmt(Stmt::Decl(ty)));
                     hoisted.push(ModuleItem::Stmt(Stmt::Decl(factories)));
                 }
                 ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { span, decl }))
                     if is_zts_decl(&decl) =>
                 {
-                    let (ty, factories) = lower_zts_decl(decl).unwrap();
+                    let (ty, factories) = lower_zts_decl(decl, &mut impls).unwrap();
                     let export = |decl: Decl| {
                         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { span, decl }))
                     };
                     hoisted.push(export(ty));
                     hoisted.push(export(factories));
                 }
-                other => out.push(other),
+                other => rest.push(other),
             }
         }
-        let idx = module_hoist_index(&out);
-        out.splice(idx..idx, hoisted);
-        *items = out;
+        // Leftover impls (no matching enum) go back as-is: loud, not lost.
+        rest.extend(
+            impls
+                .into_iter()
+                .map(|i| ModuleItem::Stmt(Stmt::Decl(Decl::ZtsImpl(Box::new(i))))),
+        );
+        let idx = module_hoist_index(&rest);
+        rest.splice(idx..idx, hoisted);
+        *items = rest;
     }
 
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
@@ -603,21 +755,34 @@ impl VisitMut for LowerEnums {
             return;
         }
 
+        let mut impls: Vec<ZtsImplDecl> = Vec::new();
         let mut hoisted: Vec<Stmt> = Vec::new();
         let mut out: Vec<Stmt> = Vec::with_capacity(stmts.len());
         for stmt in stmts.drain(..) {
             match stmt {
-                Stmt::Decl(d) if is_zts_decl(&d) => {
-                    let (ty, factories) = lower_zts_decl(d).unwrap();
-                    hoisted.push(Stmt::Decl(ty));
-                    hoisted.push(Stmt::Decl(factories));
-                }
+                Stmt::Decl(Decl::ZtsImpl(i)) => impls.push(*i),
                 other => out.push(other),
             }
         }
-        let idx = stmts_hoist_index(&out);
-        out.splice(idx..idx, hoisted);
-        *stmts = out;
+        let mut rest: Vec<Stmt> = Vec::with_capacity(out.len());
+        for stmt in out.drain(..) {
+            match stmt {
+                Stmt::Decl(d) if is_zts_decl(&d) => {
+                    let (ty, factories) = lower_zts_decl(d, &mut impls).unwrap();
+                    hoisted.push(Stmt::Decl(ty));
+                    hoisted.push(Stmt::Decl(factories));
+                }
+                other => rest.push(other),
+            }
+        }
+        rest.extend(
+            impls
+                .into_iter()
+                .map(|i| Stmt::Decl(Decl::ZtsImpl(Box::new(i)))),
+        );
+        let idx = stmts_hoist_index(&rest);
+        rest.splice(idx..idx, hoisted);
+        *stmts = rest;
     }
 
     // Defense in depth for single-statement positions (`if (c) enum E {}`
@@ -687,7 +852,9 @@ fn wrap_single_stmt_enum(stmt: &mut Stmt) {
             Decl::ZtsUnion(u) => u.span,
             _ => unreachable!(),
         };
-        let (ty, factories) = lower_zts_decl(decl).unwrap();
+        // No impl pool here: an impl cannot legally target an enum in a
+        // single-statement slot (semantic enforces same-list pairing).
+        let (ty, factories) = lower_zts_decl(decl, &mut Vec::new()).unwrap();
         *stmt = Stmt::Block(BlockStmt {
             span,
             ctxt: SyntaxContext::empty(),

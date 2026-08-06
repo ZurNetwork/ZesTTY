@@ -1,0 +1,55 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/impl_basic.zts
+---
+import { __ztsAbsurd } from "@zestty/core";
+export type Shape = {
+    kind: "Circle";
+    r: number;
+} | {
+    kind: "Rect";
+    w: number;
+    h: number;
+};
+export const Shape = {
+    Circle: (r: number): Shape =>({
+            kind: "Circle",
+            r
+        }),
+    Rect: (w: number, h: number): Shape =>({
+            kind: "Rect",
+            w,
+            h
+        }),
+    fmt (self: Shape): string {
+        return ((__m)=>{
+            const __k = __m.kind;
+            if (__k === "Circle") {
+                const { r } = __m;
+                return `circle r=${r}`;
+            }
+            if (__k === "Rect") {
+                const { w, h } = __m;
+                return `rect ${w}x${h}`;
+            }
+            return __ztsAbsurd(__k);
+        })(self);
+    }
+} satisfies {
+    [key: string]: unknown;
+} & Display<Shape>;
+// Phase 6 traits: the trait is a plain TS interface; the impl merges into
+// the enum's factory const; calls are plain TS on both ends.
+export interface Display<Self> {
+    fmt(self: Self): string;
+}
+declare const s: Shape;
+// Direct call — static-method style.
+export const label: string = Shape.fmt(s);
+// Generic over the trait: the dictionary is an ordinary parameter, and
+// the factory namespace itself satisfies Display<Shape> structurally.
+export function describe<T>(x: T, impl: Display<T>): string {
+    return `<${impl.fmt(x)}>`;
+}
+export const d: string = describe(s, Shape);

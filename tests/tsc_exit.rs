@@ -657,6 +657,49 @@ fn result_from_core_composes_with_match() {
 }
 
 #[test]
+fn impl_output_passes_tsc() {
+    // Phase 6 traits, whole loop: trait interface + enum + impl + direct
+    // call + generic dictionary call, all verified by tsc.
+    let (ts_path, _) = compile_to("impl_basic.zts", "exit_impl.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected impl output:\n{text}");
+    let (ts_path, _) = compile_to("impl_multi_trait.zts", "exit_impl_multi.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected multi-trait impl output:\n{text}");
+}
+
+#[test]
+fn impl_wrong_return_fails_satisfies() {
+    // Conformance safety property: a method that does not satisfy its
+    // trait is a tsc error on the generated `satisfies` clause.
+    let (ts_path, _) = compile_to("impl_wrong_return.zts", "exit_impl_wrong.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(!ok, "tsc must reject a non-conforming impl");
+    // The error lands on the METHOD (its span survives into the twin), as
+    // an assignability failure against the trait's member type.
+    assert!(
+        text.contains("TS2322") && text.contains("not assignable"),
+        "expected a satisfies assignability error on the method:\n{text}"
+    );
+}
+
+#[test]
+fn impl_coherence_duplicate_method_fails_tsc() {
+    // Coherence safety property: two impls colliding on a method name
+    // become duplicate object keys — rejected by tsc (TS1117), never
+    // checked on the zts side.
+    let (ts_path, _) = compile_to("impl_coherence.zts", "exit_impl_coherence.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(!ok, "tsc must reject colliding impl methods");
+    // Object METHODS collide as TS2300 (duplicate identifier), one error
+    // per colliding method span.
+    assert!(
+        text.contains("TS2300") && text.contains("Duplicate identifier"),
+        "expected the duplicate-identifier error:\n{text}"
+    );
+}
+
+#[test]
 fn missing_arm_fails_tsc_and_maps_to_match() {
     let (ts_path, map_json) = compile_to("match_missing_arm.zts", "exit_missing.ts");
     let (ok, text) = tsc(&ts_path);

@@ -346,11 +346,64 @@ export behavior as `newtype`. The guard uses `indexOf` (ES5-clean —
 rides on the argument — a receiver cast would need parens the fixer strips
 (load-bearing).
 
+### 8. Traits (Phase 6, Zuri-approved 2026-08-06)
+
+TS-flavored trait impls: ONE new construct, everything else is plain
+TypeScript on both ends.
+
+```ts
+// zts source — the trait is a vanilla TS interface (zero zts grammar)
+interface Display<Self> {
+  fmt(self: Self): string;
+}
+enum Shape {
+  Circle { r: number },
+}
+impl Display for Shape {
+  fn fmt(self): string {
+    return match (self) { Circle { r } => `circle r=${r}` };
+  }
+}
+
+// generated TS — methods merge into the factory const
+const Shape = {
+  Circle: (r: number): Shape => ({ kind: "Circle", r }),
+  fmt(self: Shape): string { /* lowered match */ },
+} satisfies { [key: string]: unknown } & Display<Shape>;
+```
+
+Calls are plain TS: `Shape.fmt(s)` (static-method style), and generics
+take the dictionary as an ordinary parameter — `describe(s, Shape)` works
+because the factory structurally satisfies `Display<Shape>`; there is
+**no call-site lowering at all**. Vanilla `.ts` consumers inherit the
+whole system as objects + interfaces.
+
+Load-bearing details:
+
+- Return types are TS-style `:` (no `->` token exists; TS-flavored
+  direction prefers it). The bare `self` receiver is required first and
+  gets its type annotation in the LOWERING (annotating it in source is an
+  error).
+- The `{ [key: string]: unknown }` intersection member absorbs the
+  variant factories from `satisfies`' excess-property check. Written
+  inline, never `Record` — a user shadow of `Record` would silently
+  change what conformance means (same reasoning as the globalThis rule).
+- Orphan rule (semantic): `impl X for T` requires zts enum `T` in the
+  SAME statement list; v1 is enum-impls only. `export impl` is an error
+  (the factory const owns the export). Single-statement slots
+  (`if (c) impl ...`) are an error.
+- Safety, all tsc-enforced (exit-tested): non-conforming method →
+  TS2322 on the method span; colliding methods across impls → TS2300
+  duplicate identifier; non-exhaustive match inside a method → the
+  existing keystone.
+- Within-impl duplicate methods and `__zts`-prefixed method names are
+  semantic errors (better spans than the tsc equivalents).
+
 ### Deliberately deferred (do not implement yet)
 
 `Option<T>`, `let`/`let mut`, no-untracked-throws, move checking.
 (Newtypes and `?` shipped in Phase 5 — see features 5 and 6 above;
-traits promoted to Phase 6, Zuri-approved 2026-08-06.)
+traits shipped in Phase 6 — feature 8.)
 
 **Shipped 2026-08-06 (Zuri-approved): `not` as a prefix operator** —
 pure sugar, `not <unary-expr>` → `!expr`, same precedence as `!` (so
@@ -546,14 +599,17 @@ Dispositions from the same review (recorded so they are not re-litigated):
 The next implementation. Repeats the Phase 1 loop (fork parser tests,
 snapshots happy + error, tsc exit test per safety property, review gate).
 
-- [ ] **Traits — TS-flavored, one new construct only.** Design decided
+- [x] **Traits — TS-flavored, one new construct only** — SHIPPED, see
+      feature 8. Design decided
       in conversation with Zuri (2026-08-06); passes the type-plane rule
       at levels 1–2. Deliberately NOT Rust cosplay: everything except
       the `impl` block is plain TypeScript on both ends.
   - **Trait declaration = a vanilla TS `interface`** with a `Self` type
     parameter (`interface Display<Self> { fmt(self: Self): string }`).
     Zero new grammar; erased.
-  - **`impl Display for Shape { fn fmt(self) -> string { ... } }`** —
+  - **`impl Display for Shape { fn fmt(self): string { ... } }`** —
+    (return types are TS-style `:` — there is no `->` token in the
+    lexer, and the TS-flavored direction prefers it anyway) —
     the one zts construct (`for` header locked: it reads as a sentence).
     Lowers to methods **merged into the factory const the enum already
     emits**, with `satisfies ... & Display<Shape>` appended — the
@@ -571,7 +627,7 @@ snapshots happy + error, tsc exit test per safety property, review gate).
     method → `satisfies Display<Shape>` fails on the impl; deleted impl
     → every call site fails; non-exhaustive `match` inside an impl → the
     existing `__ztsAbsurd` keystone fires; two impls colliding on a
-    method name → duplicate object key (TS1117) — coherence enforced by
+    method name → duplicate identifier (TS2300) — coherence enforced by
     the emit shape, never checked by us.
   - **Orphan rule (locked):** `impl ... for T` only in the module that
     declares `T` — locally checkable at parse time, and what makes the

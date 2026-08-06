@@ -1,0 +1,41 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/impl_multi_trait.zts
+---
+import { __ztsAbsurd } from "@zestty/core";
+type Box = {
+    kind: "Cube";
+    side: number;
+};
+const Box = {
+    Cube: (side: number): Box =>({
+            kind: "Cube",
+            side
+        }),
+    area (self: Box): number {
+        return ((__m)=>{
+            const __k = __m.kind;
+            if (__k === "Cube") {
+                const { side } = __m;
+                return side * side;
+            }
+            return __ztsAbsurd(__k);
+        })(self);
+    },
+    scaled (self: Box, k: number): number {
+        return Box.area(self) * k;
+    }
+} satisfies {
+    [key: string]: unknown;
+} & Area<Box> & Scaled<Box>;
+// Two impls for one enum: methods merge into ONE factory const, the
+// satisfies clause intersects both traits, impl order is preserved.
+interface Area<Self> {
+    area(self: Self): number;
+}
+interface Scaled<Self> {
+    scaled(self: Self, k: number): number;
+}
+declare const b: Box;
+export const n: number = Box.scaled(b, 2);

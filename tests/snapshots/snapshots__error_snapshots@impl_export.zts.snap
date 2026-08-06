@@ -1,0 +1,15 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/impl_export.zts
+---
+error: `export impl` is not supported: the impl merges into the type's factory const — exporting the enum exports its methods
+  --> tests/fixtures/errors/impl_export.zts:10:8
+   |
+10 |   export impl Display for Shape {
+   |  ________^
+11 | |   fn fmt(self): string {
+12 | |     return "";
+13 | |   }
+14 | | }
+   | |_^

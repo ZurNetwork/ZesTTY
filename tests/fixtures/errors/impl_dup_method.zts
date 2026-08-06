@@ -1,0 +1,16 @@
+interface Display<Self> {
+  fmt(self: Self): string;
+}
+
+enum Shape {
+  Circle { r: number },
+}
+
+impl Display for Shape {
+  fn fmt(self): string {
+    return "a";
+  }
+  fn fmt(self): string {
+    return "b";
+  }
+}
