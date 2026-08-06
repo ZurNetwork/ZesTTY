@@ -3,11 +3,12 @@ import { ztsCheck } from "./lib.js";
 
 const args = process.argv.slice(2);
 const keep = args.includes("--keep");
+const twins = args.includes("--twins");
 const svelte = !args.includes("--no-svelte");
 const root = args.find((a) => !a.startsWith("--")) ?? process.cwd();
 
 if (args.includes("--help") || args.includes("-h")) {
-  console.error("usage: zts-check [root] [--keep]");
+  console.error("usage: zts-check [root] [--keep] [--no-svelte] [--twins]");
   console.error("");
   console.error(
     'Compiles .zts/.ztsx modules and <script lang="zts"> blocks into',
@@ -21,4 +22,8 @@ if (args.includes("--help") || args.includes("-h")) {
   process.exit(2);
 }
 
+if (twins) {
+  const { generateTwins } = await import("./lib.js");
+  process.exit(generateTwins(root));
+}
 process.exit(ztsCheck(root, { keep, svelte }));
