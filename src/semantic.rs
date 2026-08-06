@@ -114,17 +114,71 @@ impl Checker<'_> {
             self.err(m.span, "match must have at least one arm");
         }
 
-        let mut seen: HashSet<&swc_atoms::Atom> = HashSet::with_capacity(m.arms.len());
+        // A match is either variant-mode or literal-mode, never mixed;
+        // `_` is legal in both but must be the LAST arm and appear once.
+        let mut seen_variants: HashSet<&swc_atoms::Atom> = HashSet::new();
+        let mut seen_lits: HashSet<String> = HashSet::new();
+        let mut mode: Option<&'static str> = None;
+        let mut wildcard_seen = false;
+
         for arm in &m.arms {
-            if !seen.insert(&arm.variant.sym) {
+            if wildcard_seen {
                 self.err(
-                    arm.variant.span,
-                    &format!("duplicate match arm for variant `{}`", arm.variant.sym),
+                    arm.span,
+                    "unreachable arm: `_` matches everything and must be the last arm",
                 );
             }
-
-            if let Some(binding) = &arm.binding {
-                self.check_binding(binding);
+            match &arm.pattern {
+                MatchPat::Wildcard(..) => {
+                    wildcard_seen = true;
+                }
+                MatchPat::Variant(v) => {
+                    if v.name.sym == "_" {
+                        self.err(
+                            v.name.span,
+                            "`_` cannot be a variant name; write `_ => ...` for a wildcard arm",
+                        );
+                    }
+                    match mode {
+                        Some("lit") => self.err(
+                            v.span,
+                            "cannot mix variant arms and literal arms in one match",
+                        ),
+                        _ => mode = Some("variant"),
+                    }
+                    if !seen_variants.insert(&v.name.sym) {
+                        self.err(
+                            v.name.span,
+                            &format!("duplicate match arm for variant `{}`", v.name.sym),
+                        );
+                    }
+                    if let Some(binding) = &v.binding {
+                        self.check_binding(binding);
+                    }
+                }
+                MatchPat::Lit(l) => {
+                    match mode {
+                        Some("variant") => self.err(
+                            l.span,
+                            "cannot mix literal arms and variant arms in one match",
+                        ),
+                        _ => mode = Some("lit"),
+                    }
+                    // Span-free identity: Debug on Lit embeds spans, which
+                    // would make every literal unique.
+                    let key = match &l.lit {
+                        Lit::Str(s) => format!("s:{:?}", s.value),
+                        Lit::Num(n) => {
+                            format!("n:{}{}", if l.neg { "-" } else { "" }, n.value)
+                        }
+                        Lit::Bool(b) => format!("b:{}", b.value),
+                        Lit::Null(..) => "null".to_string(),
+                        other => format!("x:{:?}", other.span()),
+                    };
+                    if !seen_lits.insert(key) {
+                        self.err(l.span, "duplicate literal match arm");
+                    }
+                }
             }
 
             let mut suspender = SuspenderCheck {

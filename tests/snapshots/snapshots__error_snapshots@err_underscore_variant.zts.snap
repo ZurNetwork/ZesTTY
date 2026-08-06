@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_underscore_variant.zts
+---
+error: `_` cannot be a variant name; write `_ => ...` for a wildcard arm
+ --> tests/fixtures/errors/err_underscore_variant.zts:6:3
+  |
+6 |   _ { n } => n,
+  |   ^

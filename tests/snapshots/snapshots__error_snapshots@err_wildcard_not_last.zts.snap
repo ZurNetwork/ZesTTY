@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_wildcard_not_last.zts
+---
+error: unreachable arm: `_` matches everything and must be the last arm
+ --> tests/fixtures/errors/err_wildcard_not_last.zts:8:3
+  |
+8 |   "b" => 2,
+  |   ^^^^^^^^
