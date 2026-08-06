@@ -3,11 +3,7 @@ source: tests/snapshots.rs
 expression: out.code
 input_file: tests/fixtures/union_basic.zts
 ---
-function __ztsAbsurd(x: never): never {
-    throw globalThis.Object.assign(new globalThis.Error("zts: non-exhaustive match"), {
-        ztsTag: x
-    });
-}
+import { __ztsAbsurd } from "@zestty/core";
 // Closed string-literal vocabulary: type + runtime values + type guard.
 type DeleteOutcome = 'soft' | 'hard' | 'unknown';
 const DeleteOutcome = {

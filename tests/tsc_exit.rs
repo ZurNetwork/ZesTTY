@@ -14,7 +14,19 @@ fn repo_root() -> &'static Path {
 }
 
 fn tsc(file: &Path) -> (bool, String) {
-    tsc_with(file, &["--strict"])
+    // Since issue #47 the default emit imports __ztsAbsurd from
+    // @zestty/core, so resolution flags matching a real consumer are part
+    // of the default check environment.
+    tsc_with(
+        file,
+        &[
+            "--strict",
+            "--module",
+            "esnext",
+            "--moduleResolution",
+            "bundler",
+        ],
+    )
 }
 
 fn tsc_with(file: &Path, extra: &[&str]) -> (bool, String) {
@@ -39,6 +51,9 @@ fn tsc_with(file: &Path, extra: &[&str]) -> (bool, String) {
 }
 
 fn compile_to(fixture: &str, out_name: &str) -> (std::path::PathBuf, String) {
+    // Default emit imports @zestty/core (issue #47) — every tsc run needs
+    // its dist built, not just the Result test.
+    ensure_core_dist();
     let fixture_path = repo_root().join("tests/fixtures").join(fixture);
     let (out, diags) = common::compile_fixture(&fixture_path)
         .unwrap_or_else(|(e, d)| panic!("{fixture} failed to compile: {e}\n{d}"));
@@ -49,6 +64,32 @@ fn compile_to(fixture: &str, out_name: &str) -> (std::path::PathBuf, String) {
     let ts_path = dir.join(out_name);
     std::fs::write(&ts_path, &out.code).unwrap();
     (ts_path, out.map)
+}
+
+#[test]
+fn inline_preamble_output_is_self_contained() {
+    // The --inline-preamble opt-out (issue #47): output must pass tsc
+    // WITHOUT any module-resolution environment — no @zestty/core, no
+    // resolution flags — because that's its entire reason to exist.
+    let fixture_path = repo_root().join("tests/fixtures/match_basic.zts");
+    let opts = zestty::Options {
+        preamble_import: false,
+        ..Default::default()
+    };
+    let (out, diags) = common::compile_fixture_with(&fixture_path, opts)
+        .unwrap_or_else(|(e, d)| panic!("match_basic failed to compile: {e}\n{d}"));
+    assert_eq!(diags, "");
+    assert!(
+        !out.code.contains("@zestty/core"),
+        "inline mode must not import the core package:\n{}",
+        out.code
+    );
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    std::fs::create_dir_all(dir).unwrap();
+    let ts_path = dir.join("exit_inline_preamble.ts");
+    std::fs::write(&ts_path, &out.code).unwrap();
+    let (ok, text) = tsc_with(&ts_path, &["--strict"]);
+    assert!(ok, "tsc rejected self-contained inline output:\n{text}");
 }
 
 #[test]
@@ -135,16 +176,23 @@ fn directives_stay_in_prologue() {
     let (ts_path, _) = compile_to("match_directives_imports.zts", "exit_directives.ts");
     let code = std::fs::read_to_string(&ts_path).unwrap();
     let first_directive = code.find("\"use client\"").expect("directive missing");
-    let helper = code.find("__ztsAbsurd").expect("helper missing");
-    let import_pos = code.find("import ").expect("import missing");
+    let user_import = code.find("import ").expect("user import missing");
+    let helper_import = code
+        .find("import { __ztsAbsurd }")
+        .expect("helper import missing");
     assert!(
-        first_directive < import_pos && import_pos < helper,
-        "expected directives, then imports, then the helper:\n{code}"
+        first_directive < user_import && user_import < helper_import,
+        "expected directives, then imports (helper import after user imports):\n{code}"
+    );
+    assert_eq!(
+        code.matches("import { __ztsAbsurd }").count(),
+        1,
+        "two matches must share one helper import"
     );
     assert_eq!(
         code.matches("function __ztsAbsurd").count(),
-        1,
-        "two matches must share one helper"
+        0,
+        "default emit must not inline the helper (issue #47)"
     );
 }
 
@@ -561,39 +609,34 @@ fn generated_js_runs_with_correct_semantics() {
 /// exists so `cargo test` is self-sufficient (locally AND in CI) instead of
 /// depending on a prior `npm test` having built it as a side effect.
 fn ensure_core_dist() {
-    let dist = repo_root().join("packages/core/dist/index.d.ts");
-    if dist.exists() {
-        return;
-    }
-    let out = Command::new("npm")
-        .args(["run", "build", "-w", "@zestty/core"])
-        .current_dir(repo_root())
-        .output()
-        .expect("failed to spawn npm to build @zestty/core");
-    assert!(
-        out.status.success(),
-        "building @zestty/core failed:\n{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
+    // Tests run in parallel; only one npm build may run (and everyone
+    // must wait for it), or concurrent builds race on dist/.
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let dist = repo_root().join("packages/core/dist/index.d.ts");
+        if dist.exists() {
+            return;
+        }
+        let out = Command::new("npm")
+            .args(["run", "build", "-w", "@zestty/core"])
+            .current_dir(repo_root())
+            .output()
+            .expect("failed to spawn npm to build @zestty/core");
+        assert!(
+            out.status.success(),
+            "building @zestty/core failed:\n{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    });
 }
 
 #[test]
 fn result_from_core_composes_with_match() {
     // The whole point: @zestty/core's Result + expression-if + match, one
     // file, verified by tsc end-to-end (feature #2's exit test).
-    ensure_core_dist();
     let (ts_path, _) = compile_to("result_match.zts", "exit_result.ts");
-    let (ok, text) = tsc_with(
-        &ts_path,
-        &[
-            "--strict",
-            "--module",
-            "esnext",
-            "--moduleResolution",
-            "bundler",
-        ],
-    );
+    let (ok, text) = tsc(&ts_path);
     assert!(ok, "tsc rejected Result+match composition:\n{text}");
 
     // Delete the Err arm: the keystone must fire for Results too.
@@ -605,16 +648,7 @@ fn result_from_core_composes_with_match() {
     assert_ne!(code, broken, "fixture drifted; update the arm surgery");
     let broken_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("exit_result_broken.ts");
     std::fs::write(&broken_path, broken).unwrap();
-    let (ok, text) = tsc_with(
-        &broken_path,
-        &[
-            "--strict",
-            "--module",
-            "esnext",
-            "--moduleResolution",
-            "bundler",
-        ],
-    );
+    let (ok, text) = tsc(&broken_path);
     assert!(
         !ok,
         "keystone must reject a Result match missing its Err arm"

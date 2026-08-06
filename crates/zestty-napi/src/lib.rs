@@ -26,7 +26,9 @@ pub struct CompileOptions {
     /// Embed original source text in the sourcemap. Default true.
     pub inline_sources_content: Option<bool>,
     /// Import `__ztsAbsurd` from @zestty/core instead of emitting the
-    /// per-file helper (committed-twins mode). Default false.
+    /// per-file helper. Default TRUE since Phase 6 (issue #47, "universal
+    /// absurd"); pass false for output that must not depend on
+    /// @zestty/core (virtual twins, dep-less consumers).
     pub preamble_import: Option<bool>,
 }
 

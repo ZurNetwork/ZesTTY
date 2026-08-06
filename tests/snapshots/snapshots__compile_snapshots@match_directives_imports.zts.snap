@@ -6,11 +6,7 @@ input_file: tests/fixtures/match_directives_imports.zts
 "use client";
 "use strict";
 import type { Whatever } from "./elsewhere";
-function __ztsAbsurd(x: never): never {
-    throw globalThis.Object.assign(new globalThis.Error("zts: non-exhaustive match"), {
-        ztsTag: x
-    });
-}
+import { __ztsAbsurd } from "@zestty/core";
 type T = {
     kind: "K";
     v: number;

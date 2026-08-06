@@ -15,7 +15,7 @@ import { compile } from "@zestty/native";
  * export default { preprocess: [ztsPreprocess(), vitePreprocess()] };
  * ```
  *
- * @param {{ decorators?: boolean }} [options]
+ * @param {{ decorators?: boolean, inlinePreamble?: boolean }} [options]
  * @returns {import("svelte/compiler").PreprocessorGroup}
  */
 export default function ztsPreprocess(options = {}) {
@@ -28,6 +28,10 @@ export default function ztsPreprocess(options = {}) {
       const { code, map } = compile(content, filename ?? "component.svelte", {
         tsx: false,
         decorators: options.decorators,
+        // Default (issue #47): import the one shared __ztsAbsurd from
+        // @zestty/core; `inlinePreamble: true` restores the per-script
+        // helper for projects without the dependency.
+        ...(options.inlinePreamble ? { preambleImport: false } : {}),
       });
 
       return {

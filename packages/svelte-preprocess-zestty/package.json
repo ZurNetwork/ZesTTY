@@ -14,7 +14,13 @@
     "@zestty/native": "^0.3.0"
   },
   "peerDependencies": {
+    "@zestty/core": ">=0.4.0",
     "svelte": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "@zestty/core": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "svelte": "^5.42.0"

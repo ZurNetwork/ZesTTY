@@ -4,11 +4,7 @@ expression: out.code
 input_file: tests/fixtures/result_match.zts
 ---
 import { type Result, Ok, Err, map } from "@zestty/core";
-function __ztsAbsurd(x: never): never {
-    throw globalThis.Object.assign(new globalThis.Error("zts: non-exhaustive match"), {
-        ztsTag: x
-    });
-}
+import { __ztsAbsurd } from "@zestty/core";
 function divide(a: number, b: number): Result<number, string> {
     return b === 0 ? Err("division by zero") : Ok(a / b);
 }

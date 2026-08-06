@@ -1,9 +1,11 @@
 //! zestty — compile `.zts` files to plain TypeScript.
 //!
-//! Usage: `zestty <input.zts> [-o <output.ts>] [--no-map]`
+//! Usage: `zestty <input.zts> [-o <output.ts>] [--no-map] [--inline-preamble]`
 //!
 //! Writes `<input>.ts` and `<input>.ts.map` next to the input unless `-o`
-//! is given.
+//! is given. `--inline-preamble` restores the per-file `__ztsAbsurd`
+//! helper for consumers without the @zestty/core dependency (the default
+//! imports the one shared definition — issue #47).
 
 use std::{path::PathBuf, process::ExitCode};
 
@@ -13,16 +15,20 @@ use swc_common::{
     sync::Lrc,
 };
 
+const USAGE: &str = "usage: zestty <input.zts> [-o <output.ts>] [--no-map] [--inline-preamble]";
+
 struct Args {
     input: PathBuf,
     output: Option<PathBuf>,
     emit_map: bool,
+    inline_preamble: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
     let mut input = None;
     let mut output = None;
     let mut emit_map = true;
+    let mut inline_preamble = false;
 
     let mut argv = std::env::args_os().skip(1);
     while let Some(arg) = argv.next() {
@@ -34,8 +40,9 @@ fn parse_args() -> Result<Args, String> {
                 output = Some(PathBuf::from(v));
             }
             Some("--no-map") => emit_map = false,
+            Some("--inline-preamble") => inline_preamble = true,
             Some("-h") | Some("--help") => {
-                return Err("usage: zestty <input.zts> [-o <output.ts>] [--no-map]".to_string());
+                return Err(USAGE.to_string());
             }
             _ if input.is_none() => input = Some(PathBuf::from(arg)),
             _ => return Err(format!("unexpected argument: {}", arg.to_string_lossy())),
@@ -43,10 +50,10 @@ fn parse_args() -> Result<Args, String> {
     }
 
     Ok(Args {
-        input: input
-            .ok_or_else(|| "usage: zestty <input.zts> [-o <output.ts>] [--no-map]".to_string())?,
+        input: input.ok_or_else(|| USAGE.to_string())?,
         output,
         emit_map,
+        inline_preamble,
     })
 }
 
@@ -72,7 +79,11 @@ fn main() -> ExitCode {
     let cm: Lrc<SourceMap> = Default::default();
     let handler = Handler::with_tty_emitter(ColorConfig::Auto, true, false, Some(cm.clone()));
 
-    let output = match zestty::compile_file(&cm, &handler, &args.input) {
+    let opts = zestty::Options {
+        preamble_import: !args.inline_preamble,
+        ..Default::default()
+    };
+    let output = match zestty::compile_file_with(&cm, &handler, &args.input, opts) {
         Ok(o) => o,
         Err(err) => {
             eprintln!("error: {err}");

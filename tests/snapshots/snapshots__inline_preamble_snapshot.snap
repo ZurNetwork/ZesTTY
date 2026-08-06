@@ -1,9 +1,12 @@
 ---
 source: tests/snapshots.rs
 expression: out.code
-input_file: tests/fixtures/match_basic.zts
 ---
-import { __ztsAbsurd } from "@zestty/core";
+function __ztsAbsurd(x: never): never {
+    throw globalThis.Object.assign(new globalThis.Error("zts: non-exhaustive match"), {
+        ztsTag: x
+    });
+}
 type Shape = {
     kind: "Circle";
     radius: number;

@@ -91,19 +91,14 @@ const area = match (shape) {
 Lowers to:
 
 ```ts
-// generated TS (helper injected once per module, after directives+imports;
-// any-free so linted twins need no exemptions. In committed-twins mode the
-// helper is imported from @zestty/core instead — one definition, no
-// per-file boilerplate; `zts-check --twins --inline-preamble` restores the
-// standalone form.)
-function __ztsAbsurd(x: never): never {
-  throw globalThis.Object.assign(
-    new globalThis.Error("zts: non-exhaustive match"),
-    {
-      ztsTag: x,
-    },
-  );
-}
+// generated TS (universal absurd, issue #47: the ONE shared helper is
+// imported from @zestty/core — injected once per module, after
+// directives+imports. `--inline-preamble` (CLI/zts-check) and
+// `inlinePreamble` (vite/svelte options) restore the standalone
+// per-module declaration for consumers without the core dependency;
+// virtual twins that never ship — plain zts-check, the language-server —
+// stay inline so dep-less workspaces keep working.)
+import { __ztsAbsurd } from "@zestty/core";
 
 const area = ((__m) => {
   const __k = __m.kind;
@@ -584,17 +579,19 @@ snapshots happy + error, tsc exit test per safety property, review gate).
   - **v1 scope forks (open):** enum-only impls vs also newtypes/plain
     types; default trait methods (lean: defer to v2); multi-trait impls
     on one type (falls out of the merge — keep).
-- [ ] **Universal absurd.** Today the default emit declares
-      `function __ztsAbsurd` per module (`--twins` mode already imports
-      it from `@zestty/core`, issue #37). Flip the default: every
-      compile imports the ONE shared helper from `@zestty/core`; the
-      per-module inline declaration becomes the opt-out
-      (`--inline-preamble` and equivalent options) for consumers without
-      the core dependency. Rationale (Zuri): the helper keeps being
-      re-generated on top of functions — duplicated per module, a waste
-      of memory. Touches: CLI, napi `compile()` default, vite plugin,
-      svelte preprocessor, language-server — one flag flip each, plus
-      snapshot updates.
+- [x] **Universal absurd** (issue #47) — SHIPPED. The default emit now
+      imports the ONE shared `__ztsAbsurd` from `@zestty/core` (as
+      `--twins` mode already did, issue #37) instead of declaring the
+      helper per module. Rationale (Zuri): the per-module copy was
+      re-generated on top of functions — a waste of memory. Opt-outs:
+      CLI `--inline-preamble`, `inlinePreamble` option on the vite
+      plugin and svelte preprocessor (both now carry an optional peer on
+      `@zestty/core >= 0.4.0`). Virtual twins that never ship stay
+      inline deliberately: plain `zts-check` temp twins and the
+      language-server, so dep-less workspaces keep working and editor
+      diagnostics can't invent a missing-module error. Scripts
+      (non-modules) always inline — they cannot import. Pinned by an
+      inline-mode snapshot + a self-contained tsc exit test.
 
 ### Phase 3 — DX
 
