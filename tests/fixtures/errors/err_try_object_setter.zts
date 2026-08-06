@@ -1,0 +1,9 @@
+declare function g(): { kind: "Ok"; value: number } | { kind: "Err"; error: string };
+
+export const o = {
+  v: 0,
+  set port(raw: number) {
+    const p = g()?;
+    this.v = p + raw;
+  },
+};

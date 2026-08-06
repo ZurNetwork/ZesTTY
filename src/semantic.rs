@@ -391,6 +391,24 @@ impl Visit for Checker<'_> {
         self.expr_depth -= 1;
     }
 
+    fn visit_pat(&mut self, p: &Pat) {
+        // Binding patterns recurse through the post-parse passes like
+        // everything else (security verification V1); same budget.
+        self.expr_depth += 1;
+        if self.expr_depth > MAX_EXPR_DEPTH {
+            if !self.depth_reported {
+                self.depth_reported = true;
+                self.err(
+                    p.span(),
+                    &format!("pattern nesting exceeds the zts limit of {MAX_EXPR_DEPTH}"),
+                );
+            }
+        } else {
+            p.visit_children_with(self);
+        }
+        self.expr_depth -= 1;
+    }
+
     fn visit_stmt(&mut self, s: &Stmt) {
         // Statement nesting (`if (c) if (c) ...`) recurses through the
         // post-parse passes too (security-gate F4); same budget.
@@ -504,14 +522,18 @@ impl Visit for Checker<'_> {
     }
 
     fn visit_class_method(&mut self, m: &ClassMethod) {
+        // Visit the key FIRST with the flag clear — a computed key's
+        // function expression must not consume the setter marker
+        // (security verification V2).
+        m.key.visit_with(self);
         self.next_fn_is_setter = m.kind == MethodKind::Setter;
-        m.visit_children_with(self);
+        m.function.visit_with(self);
         self.next_fn_is_setter = false;
     }
 
     fn visit_private_method(&mut self, m: &PrivateMethod) {
         self.next_fn_is_setter = m.kind == MethodKind::Setter;
-        m.visit_children_with(self);
+        m.function.visit_with(self);
         self.next_fn_is_setter = false;
     }
 
@@ -526,6 +548,38 @@ impl Visit for Checker<'_> {
         self.fn_depth = saved_fn;
         self.enclosing_fn = saved_shape;
         self.zts_iife_depth = saved_iife;
+    }
+
+    fn visit_getter_prop(&mut self, g: &GetterProp) {
+        // Object-literal accessors carry a BlockStmt, not a Function —
+        // give them real fn context so an annotated getter can use `?`
+        // and a setter gets the setter diagnostic (security verification
+        // V3).
+        g.key.visit_with(self);
+        self.fn_depth += 1;
+        let saved_iife = std::mem::replace(&mut self.zts_iife_depth, 0);
+        let shape = if g.type_ann.is_some() {
+            EnclosingFn::Annotated
+        } else {
+            EnclosingFn::Unannotated
+        };
+        let saved_fn = std::mem::replace(&mut self.enclosing_fn, shape);
+        g.body.visit_with(self);
+        self.enclosing_fn = saved_fn;
+        self.zts_iife_depth = saved_iife;
+        self.fn_depth -= 1;
+    }
+
+    fn visit_setter_prop(&mut self, st: &SetterProp) {
+        st.key.visit_with(self);
+        st.param.visit_with(self);
+        self.fn_depth += 1;
+        let saved_iife = std::mem::replace(&mut self.zts_iife_depth, 0);
+        let saved_fn = std::mem::replace(&mut self.enclosing_fn, EnclosingFn::Setter);
+        st.body.visit_with(self);
+        self.enclosing_fn = saved_fn;
+        self.zts_iife_depth = saved_iife;
+        self.fn_depth -= 1;
     }
 
     fn visit_static_block(&mut self, b: &StaticBlock) {

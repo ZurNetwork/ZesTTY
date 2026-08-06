@@ -1,0 +1,12 @@
+// Security verification V3: object-literal accessors get real function
+// context — an ANNOTATED getter may use `?` like any other function.
+type R = { kind: "Ok"; value: number } | { kind: "Err"; error: string };
+
+declare function g(): R;
+
+export const o = {
+  get port(): R {
+    const p = g()?;
+    return { kind: "Ok", value: p + 1 };
+  },
+};
