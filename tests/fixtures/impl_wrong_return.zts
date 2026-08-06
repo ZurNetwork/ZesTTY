@@ -1,0 +1,18 @@
+// Conformance is tsc's verdict: fmt returns number where Display wants
+// string — zts compiles this (syntax-only), the satisfies clause rejects
+// it. Exercised by the tsc exit test, snapshotted like any fixture.
+interface Display<Self> {
+  fmt(self: Self): string;
+}
+
+enum Shape {
+  Circle { r: number },
+}
+
+impl Display for Shape {
+  fn fmt(self): number {
+    return match (self) {
+      Circle { r } => r,
+    };
+  }
+}

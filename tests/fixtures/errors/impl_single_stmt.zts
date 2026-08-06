@@ -1,0 +1,11 @@
+enum Shape {
+  Circle { r: number },
+}
+
+// An impl in a single-statement slot has no statement list to pair with
+// its enum; lowering could never merge it.
+if (true) impl Display for Shape {
+  fn fmt(self): string {
+    return "";
+  }
+}

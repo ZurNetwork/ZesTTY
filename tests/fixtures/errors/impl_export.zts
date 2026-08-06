@@ -1,0 +1,14 @@
+interface Display<Self> {
+  fmt(self: Self): string;
+}
+
+enum Shape {
+  Circle { r: number },
+}
+
+// `export impl` is meaningless: the factory const owns the export.
+export impl Display for Shape {
+  fn fmt(self): string {
+    return "";
+  }
+}

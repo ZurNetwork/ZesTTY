@@ -1,0 +1,31 @@
+// Phase 6 traits: the trait is a plain TS interface; the impl merges into
+// the enum's factory const; calls are plain TS on both ends.
+export interface Display<Self> {
+  fmt(self: Self): string;
+}
+
+export enum Shape {
+  Circle { r: number },
+  Rect { w: number, h: number },
+}
+
+impl Display for Shape {
+  fn fmt(self): string {
+    return match (self) {
+      Circle { r } => `circle r=${r}`,
+      Rect { w, h } => `rect ${w}x${h}`,
+    };
+  }
+}
+
+declare const s: Shape;
+
+// Direct call — static-method style.
+export const label: string = Shape.fmt(s);
+
+// Generic over the trait: the dictionary is an ordinary parameter, and
+// the factory namespace itself satisfies Display<Shape> structurally.
+export function describe<T>(x: T, impl: Display<T>): string {
+  return `<${impl.fmt(x)}>`;
+}
+export const d: string = describe(s, Shape);

@@ -49,6 +49,7 @@ pub fn check(module: &Module, handler: &Handler) -> Result<(), SemanticFailure> 
         allow_try: None,
         enclosing_fn: EnclosingFn::None,
         next_fn_is_setter: false,
+        sanctioned_impls: HashSet::new(),
     };
     module.visit_with(&mut checker);
 
@@ -102,6 +103,12 @@ struct Checker<'a> {
     /// Set by class-method visitors so the inner `visit_function` knows it
     /// is a setter (setters cannot return a value).
     next_fn_is_setter: bool,
+    /// Node identities (addresses) of impls found in a legal position (a
+    /// module/block statement list). `visit_zts_impl_decl` removes each on
+    /// visit; an impl NOT in the set sits in a single-statement slot
+    /// (`if (c) impl ...`), which the list-based orphan check never sees
+    /// and the lowering cannot merge.
+    sanctioned_impls: HashSet<usize>,
 }
 
 /// Hard cap on RENDERED zts diagnostics: each one re-renders its source
@@ -351,26 +358,113 @@ impl Checker<'_> {
     }
 }
 
+impl Checker<'_> {
+    /// The trait rules that need the whole statement list (Phase 6):
+    /// - orphan rule: `impl X for T` requires a zts enum `T` in the SAME
+    ///   list (v1: enum impls only);
+    /// - `export impl` is meaningless (the factory const owns the export);
+    /// - every impl seen here is sanctioned — impls anywhere else are in a
+    ///   single-statement slot and get rejected by `visit_zts_impl_decl`.
+    fn check_zts_impls(&mut self, decls: &[(&Decl, bool)]) {
+        let enums: HashSet<&swc_atoms::Atom> = decls
+            .iter()
+            .filter_map(|(d, _)| match d {
+                Decl::ZtsEnum(e) => Some(&e.ident.sym),
+                _ => None,
+            })
+            .collect();
+        for (d, exported) in decls {
+            let Decl::ZtsImpl(i) = d else { continue };
+            self.sanctioned_impls
+                .insert(&**i as *const ZtsImplDecl as usize);
+            if *exported {
+                self.err(
+                    i.span,
+                    "`export impl` is not supported: the impl merges into the type's factory \
+                     const — exporting the enum exports its methods",
+                );
+            }
+            if !enums.contains(&i.for_ident.sym) {
+                self.err(
+                    i.for_ident.span,
+                    &format!(
+                        "impl target `{}` is not a zts enum declared in this scope (the orphan \
+                         rule: an impl lives in the module that declares its type; v1 supports \
+                         enum impls only)",
+                        i.for_ident.sym
+                    ),
+                );
+            }
+        }
+    }
+}
+
 impl Visit for Checker<'_> {
     fn visit_expr(&mut self, e: &Expr) {
         self.guard_depth(e, |c| e.visit_children_with(c));
     }
 
     fn visit_module_items(&mut self, items: &[ModuleItem]) {
-        self.check_zts_decl_names(items.iter().filter_map(|item| match item {
-            ModuleItem::Stmt(Stmt::Decl(d)) => Some(d),
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { decl, .. })) => Some(decl),
-            _ => None,
-        }));
+        let decls: Vec<(&Decl, bool)> = items
+            .iter()
+            .filter_map(|item| match item {
+                ModuleItem::Stmt(Stmt::Decl(d)) => Some((d, false)),
+                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl { decl, .. })) => {
+                    Some((decl, true))
+                }
+                _ => None,
+            })
+            .collect();
+        self.check_zts_decl_names(decls.iter().map(|(d, _)| *d));
+        self.check_zts_impls(&decls);
         items.visit_children_with(self);
     }
 
     fn visit_stmts(&mut self, stmts: &[Stmt]) {
-        self.check_zts_decl_names(stmts.iter().filter_map(|s| match s {
-            Stmt::Decl(d) => Some(d),
-            _ => None,
-        }));
+        let decls: Vec<(&Decl, bool)> = stmts
+            .iter()
+            .filter_map(|s| match s {
+                Stmt::Decl(d) => Some((d, false)),
+                _ => None,
+            })
+            .collect();
+        self.check_zts_decl_names(decls.iter().map(|(d, _)| *d));
+        self.check_zts_impls(&decls);
         stmts.visit_children_with(self);
+    }
+
+    fn visit_zts_impl_decl(&mut self, i: &ZtsImplDecl) {
+        if !self
+            .sanctioned_impls
+            .remove(&(i as *const ZtsImplDecl as usize))
+        {
+            self.err(
+                i.span,
+                "an impl must be a top-level statement of the module or block that declares \
+                 its enum",
+            );
+        }
+        let mut seen: HashSet<&swc_atoms::Atom> = HashSet::with_capacity(i.methods.len());
+        for m in &i.methods {
+            // Method names become factory-object keys; the __zts namespace
+            // is generated-code-only (F9) and duplicates WITHIN one impl
+            // are certainly author error — catch them here with the
+            // original span. Collisions ACROSS impls or with variant names
+            // are left to tsc (duplicate object key, TS1117) by design.
+            if m.name.sym.starts_with("__zts") {
+                self.err(
+                    m.name.span,
+                    "identifiers starting with `__zts` are reserved for zts-generated code",
+                );
+            }
+            if !seen.insert(&m.name.sym) {
+                self.err(
+                    m.name.span,
+                    &format!("duplicate method `{}` in this impl", m.name.sym),
+                );
+            }
+        }
+        i.visit_children_with(self);
     }
 
     fn visit_ts_type(&mut self, t: &TsType) {

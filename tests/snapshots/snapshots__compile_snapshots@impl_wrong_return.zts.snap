@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/impl_wrong_return.zts
+---
+import { __ztsAbsurd } from "@zestty/core";
+type Shape = {
+    kind: "Circle";
+    r: number;
+};
+const Shape = {
+    Circle: (r: number): Shape =>({
+            kind: "Circle",
+            r
+        }),
+    fmt (self: Shape): number {
+        return ((__m)=>{
+            const __k = __m.kind;
+            if (__k === "Circle") {
+                const { r } = __m;
+                return r;
+            }
+            return __ztsAbsurd(__k);
+        })(self);
+    }
+} satisfies {
+    [key: string]: unknown;
+} & Display<Shape>;
+// Conformance is tsc's verdict: fmt returns number where Display wants
+// string — zts compiles this (syntax-only), the satisfies clause rejects
+// it. Exercised by the tsc exit test, snapshotted like any fixture.
+interface Display<Self> {
+    fmt(self: Self): string;
+}

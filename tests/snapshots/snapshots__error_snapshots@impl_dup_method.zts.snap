@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/impl_dup_method.zts
+---
+error: duplicate method `fmt` in this impl
+  --> tests/fixtures/errors/impl_dup_method.zts:13:6
+   |
+13 |   fn fmt(self): string {
+   |      ^^^

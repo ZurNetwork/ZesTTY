@@ -1,0 +1,29 @@
+// Two impls for one enum: methods merge into ONE factory const, the
+// satisfies clause intersects both traits, impl order is preserved.
+interface Area<Self> {
+  area(self: Self): number;
+}
+interface Scaled<Self> {
+  scaled(self: Self, k: number): number;
+}
+
+enum Box {
+  Cube { side: number },
+}
+
+impl Area for Box {
+  fn area(self): number {
+    return match (self) {
+      Cube { side } => side * side,
+    };
+  }
+}
+
+impl Scaled for Box {
+  fn scaled(self, k: number): number {
+    return Box.area(self) * k;
+  }
+}
+
+declare const b: Box;
+export const n: number = Box.scaled(b, 2);

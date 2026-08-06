@@ -1,0 +1,10 @@
+interface Display<Self> {
+  fmt(self: Self): string;
+}
+
+// No zts enum `Missing` in this module: the orphan rule rejects it.
+impl Display for Missing {
+  fn fmt(self): string {
+    return "";
+  }
+}
