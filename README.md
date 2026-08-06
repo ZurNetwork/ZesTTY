@@ -199,13 +199,15 @@ expression without `else` is a compile error.
 `Option<T>`, the `?` operator, `let`/`let mut`, traits (dictionary passing),
 newtypes, no-untracked-throws, move checking.
 
-Also deferred (Zuri, 2026-08-05): **`not` as a prefix operator** (`not expr`
-→ `!expr`). Rationale: `!expr` is visually easy to skip when reading, unlike
-`||`/`&&`; a loud negation keyword reduces misread-logic bugs. Implementation
-notes for whoever picks it up: `not` is a valid TS identifier (`not(x)`,
-`not.foo`, `not` alone must keep working), so this is a contextual-keyword
-speculation exactly like `match` — reuse the failure-memo + error-rollback
-discipline, and gate on the zts syntax flag.
+**Shipped 2026-08-06 (Zuri-approved): `not` as a prefix operator** —
+pure sugar, `not <unary-expr>` → `!expr`, same precedence as `!` (so
+`not a === b` is `(!a) === b`). Rationale: `!expr` is visually easy to
+skip when reading, unlike `||`/`&&`; a loud negation keyword reduces
+misread-logic bugs. Disambiguation is a deterministic one-token rule, no
+speculation: negation only when the operand token can never legally
+follow an identifier (a word or literal, on the same line). Everything
+else keeps vanilla meaning: `not(x)` calls, `not.foo`, `not => x`,
+`not instanceof F`, and ASI (`not⏎x` is two statements).
 
 Considered and REJECTED (Zuri, 2026-08-05): paren-less `if` conditions.
 Statement `if` must stay vanilla TS (superset promise), and the `) {`

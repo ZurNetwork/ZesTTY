@@ -66,4 +66,8 @@ const area = ((__m)=>{
 expect("match", area, 9);
 const graded = area > 100 ? "big" : area > 5 ? "mid" : "small";
 expect("chain", graded, "mid");
+expect("not", !c, false);
+expect("not-not", !!c, true);
+expect("not-binds-tight", !c === false, true);
+expect("not-in-if", !c ? 1 : 2, 2);
 console.log("exec_semantics: all assertions passed");

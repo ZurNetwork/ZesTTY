@@ -1,0 +1,35 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/not_operator.zts
+---
+function __ztsAbsurd(x: never): never {
+    const e: any = new globalThis.Error("zts: non-exhaustive match");
+    e.ztsTag = x;
+    throw e;
+}
+declare const ready: boolean;
+declare const items: string[];
+declare function not(n: number): number;
+// Negation forms.
+const a = !ready;
+const b = !!ready;
+const c = !ready ? "wait" : "go";
+const d = ((__m)=>{
+    const __k = __m.kind;
+    if (__k === "K") {
+        const { ok } = __m;
+        return !ok;
+    }
+    return __ztsAbsurd(__k);
+})({
+    kind: "K",
+    ok: ready
+} as {
+    kind: "K";
+    ok: boolean;
+});
+// Vanilla survivors: `not` as an ordinary identifier.
+const e = not(1);
+const f = not(2) + 1;
+console.log(a, b, c, d, e, f, items.length);

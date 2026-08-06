@@ -28,7 +28,7 @@ Read README.md before doing anything — it is the authoritative spec: locked fe
 
 ## Locked rules (from README — non-negotiable)
 
-- Scope is exactly four features (all shipped): `match`, `Result` (library, zero fork changes), enums-with-data, expression `if`. Deferred features (`Option`, `?`, `let mut`, traits, …) need Zuri's explicit go-ahead.
+- Scope: the four locked features (`match`, `Result` library, enums-with-data, expression `if`) plus Zuri-approved additions (`not` prefix sugar, 2026-08-06). Anything else on the deferred list needs Zuri's explicit go-ahead.
 - Discriminant field is `kind` (string literal), everywhere. `kind` is a reserved field name in enum variants.
 - Never emit TypeScript `enum` — tagged unions + factory functions only. TS `enum` member syntax in zts source is a hard error.
 - Lowering happens BEFORE codegen. Codegen arms for custom AST nodes are `unreachable!("must be lowered before emit")` — a codegen panic means a lowering bug.
