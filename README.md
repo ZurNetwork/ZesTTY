@@ -204,10 +204,39 @@ Lowering: simple branches → ternary; multi-statement branches → IIFE (same
 machinery as `match`). Applies to `if` and `match` arm bodies. `if` used as an
 expression without `else` is a compile error.
 
+### 5. Newtypes (Phase 5)
+
+Distinct identities over the same underlying type — the ID-confusion bug
+class becomes a compile error.
+
+```ts
+// zts source
+newtype AccountId = string;
+
+// generated TS
+type AccountId = string & { readonly __ztsNewtype: "AccountId" };
+const AccountId = (value: string): AccountId => value as AccountId;
+```
+
+The brand property exists only at the type level; the factory is an identity
+cast, so newtypes are **zero runtime cost**. Two newtypes over the same
+underlying type are mutually unassignable, and the raw type is not assignable
+to either (both are TS2345, no `--strict` needed). The underlying type flows
+the other way — a `Meters` is still a `number`, so arithmetic keeps working.
+
+Rules: `newtype` is a contextual keyword committing on exactly the
+`type`-alias rule (same-line identifier follows), so `newtype` stays a valid
+variable name everywhere else. No type parameters in v1. `declare newtype` is
+a hard error (declare the lowered shape instead). Lowering runs pre-resolver
+next to enums: one decl becomes two (type + const, legal declaration
+merging), hoisted past the directive prologue/imports with the same
+order-independence enums get, `export` preserved on both halves.
+
 ### Deliberately deferred (do not implement yet)
 
 `Option<T>`, the `?` operator, `let`/`let mut`, traits (dictionary passing),
-newtypes, no-untracked-throws, move checking.
+no-untracked-throws, move checking. (Newtypes shipped in Phase 5 — see
+feature 5 above.)
 
 **Shipped 2026-08-06 (Zuri-approved): `not` as a prefix operator** —
 pure sugar, `not <unary-expr>` → `!expr`, same precedence as `!` (so
@@ -320,10 +349,10 @@ Each repeats the Phase 1 loop (fork tests, snapshots, tsc exit test, review gate
       narrowing eliminates each tested literal from `__m`'s union, so an
       exhaustive literal match narrows `__m` to `never` and a missing arm
       makes tsc name the missing literal (TS2345, no `--strict` needed).
-- [ ] Newtypes: `newtype AccountId = string;` → branded type
+- [x] Newtypes: `newtype AccountId = string;` → branded type
       (`string & { readonly __ztsNewtype: "AccountId" }`) + factory.
-      Kills the ID-confusion bug class; deterministic one-token contextual
-      parse like `not`.
+      Kills the ID-confusion bug class; contextual parse mirrors the
+      `type`-alias commit rule (same-line ident follows). See feature 5.
 - [ ] `?` try operator: postfix `?` propagates `Err` with an early return;
       tsc enforces error-type compatibility against the enclosing return
       type (no checker work on our side). Constraints (locked): `?` fires

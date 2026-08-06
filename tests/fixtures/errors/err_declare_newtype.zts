@@ -1,0 +1,1 @@
+declare newtype AccountId = string;

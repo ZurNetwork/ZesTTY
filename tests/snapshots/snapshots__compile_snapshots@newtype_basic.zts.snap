@@ -1,0 +1,19 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/newtype_basic.zts
+---
+type AccountId = string & {
+    readonly __ztsNewtype: "AccountId";
+};
+const AccountId = (value: string): AccountId =>value as AccountId;
+type Meters = number & {
+    readonly __ztsNewtype: "Meters";
+};
+const Meters = (value: number): Meters =>value as Meters;
+const id = AccountId("acc_123");
+const dist = Meters(42);
+function describe(a: AccountId, d: Meters): string {
+    return `${a}: ${d}`;
+}
+console.log(describe(id, dist));

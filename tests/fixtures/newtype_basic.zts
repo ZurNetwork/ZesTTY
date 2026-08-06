@@ -1,0 +1,11 @@
+newtype AccountId = string;
+newtype Meters = number;
+
+const id = AccountId("acc_123");
+const dist = Meters(42);
+
+function describe(a: AccountId, d: Meters): string {
+  return `${a}: ${d}`;
+}
+
+console.log(describe(id, dist));

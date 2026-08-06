@@ -1,0 +1,13 @@
+// Compiles in zts; tsc must reject BOTH misuses of the branded types
+// (TS2345): a raw string where an AccountId is expected, and a UserId
+// where an AccountId is expected — same underlying type, different brands.
+newtype AccountId = string;
+newtype UserId = string;
+
+function chargeAccount(id: AccountId): string {
+  return id;
+}
+
+chargeAccount("raw-string");
+chargeAccount(UserId("u_1"));
+chargeAccount(AccountId("a_1"));

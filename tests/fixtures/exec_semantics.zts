@@ -68,4 +68,10 @@ const wildVal = match (sq) {
 expect("variant wildcard value", wildVal, -1);
 expect("variant wildcard side effect", wildSide, 1);
 
+// Phase 5: newtype factories are identity casts — zero runtime cost.
+newtype Meters = number;
+const m = Meters(5);
+expect("newtype identity", m, 5);
+expect("newtype arithmetic", m + 1, 6);
+
 console.log("exec_semantics: all assertions passed");

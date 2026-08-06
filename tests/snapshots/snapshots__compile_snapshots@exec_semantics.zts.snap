@@ -25,6 +25,11 @@ const Shape = {
             side
         })
 };
+// Phase 5: newtype factories are identity casts — zero runtime cost.
+type Meters = number & {
+    readonly __ztsNewtype: "Meters";
+};
+const Meters = (value: number): Meters =>value as Meters;
 // Executed by tests/tsc_exit.rs under node: every zts construct here must
 // produce the RIGHT VALUE at runtime, not merely typecheck. Guards against
 // precedence miscompiles that tsc cannot see.
@@ -127,4 +132,7 @@ const wildVal = ((__m)=>{
 })(sq);
 expect("variant wildcard value", wildVal, -1);
 expect("variant wildcard side effect", wildSide, 1);
+const m = Meters(5);
+expect("newtype identity", m, 5);
+expect("newtype arithmetic", m + 1, 6);
 console.log("exec_semantics: all assertions passed");

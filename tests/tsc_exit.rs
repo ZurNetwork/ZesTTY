@@ -201,6 +201,40 @@ fn wildcard_match_passes_tsc_and_disables_keystone() {
 }
 
 #[test]
+fn newtype_passes_tsc() {
+    let (ts_path, _) = compile_to("newtype_basic.zts", "exit_newtype.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected newtype output:\n{text}");
+}
+
+#[test]
+fn exported_newtype_passes_tsc_and_stays_exported() {
+    let (ts_path, _) = compile_to("newtype_export.zts", "exit_newtype_export.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected exported newtype output:\n{text}");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("export type UserId") && code.contains("export const UserId"),
+        "both the branded type and the factory must stay exported:\n{code}"
+    );
+}
+
+#[test]
+fn newtype_id_confusion_fails_tsc() {
+    // The safety property: same underlying type, different brands — a raw
+    // string and a UserId must both be rejected where AccountId is
+    // expected. Must hold without --strict.
+    let (ts_path, _) = compile_to("newtype_id_confusion.zts", "exit_newtype_confusion.ts");
+    let (ok, text) = tsc_with(&ts_path, &[]);
+    assert!(!ok, "brand must hold without --strict");
+    let ts2345 = text.matches("error TS2345").count();
+    assert!(
+        ts2345 == 2,
+        "expected exactly 2 brand violations (raw string + wrong newtype), got {ts2345}:\n{text}"
+    );
+}
+
+#[test]
 fn arm_body_maps_to_original_span() {
     // Phase 2's "breakpoint in .zts" story depends on arm bodies mapping
     // back to their source, not just the absurd call.
