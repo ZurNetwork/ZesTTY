@@ -1,7 +1,7 @@
 {
   "name": "@zestty/vite-plugin",
   "version": "0.1.0",
-  "description": "Vite plugin for .zts/.ztsx files: zts → TS (native compiler) → JS (vite's esbuild), sourcemaps composed end-to-end.",
+  "description": "Vite plugin for .zts/.ztsx files: zts \u2192 TS (native compiler) \u2192 JS (vite's esbuild), sourcemaps composed end-to-end.",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -19,5 +19,17 @@
   "devDependencies": {
     "vite": "^7.3.0",
     "source-map-js": "^1.2.0"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZurNetwork/ZesTTY.git",
+    "directory": "packages/vite-plugin-zestty"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "index.js"
+  ]
 }

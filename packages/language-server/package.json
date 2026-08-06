@@ -20,5 +20,18 @@
     "vscode-languageserver": "^9.0.1",
     "vscode-languageserver-textdocument": "^1.0.12",
     "typescript": "^5.9.0"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZurNetwork/ZesTTY.git",
+    "directory": "packages/language-server"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "lib.js",
+    "server.js"
+  ]
 }

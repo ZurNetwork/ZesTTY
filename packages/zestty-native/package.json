@@ -13,6 +13,16 @@
     "*.node"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "prepublishOnly": "test -f zestty.linux-x64-gnu.node || (echo 'native binary missing: run npm run build:native at the repo root' && exit 1)"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZurNetwork/ZesTTY.git",
+    "directory": "packages/zestty-native"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

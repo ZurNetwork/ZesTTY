@@ -25,5 +25,19 @@
     "svelte": "^5.56.8",
     "svelte-check": "^4.7.4",
     "typescript": "^5.9.3"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZurNetwork/ZesTTY.git",
+    "directory": "packages/check"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bin.js",
+    "lib.js",
+    "shadow.js"
+  ]
 }

@@ -17,6 +17,16 @@
   "scripts": {
     "build": "../../node_modules/.bin/tsc index.ts --outDir dist --declaration --module esnext --target es2022 --strict",
     "pretest": "npm run build",
-    "test": "node --test"
+    "test": "node --test",
+    "prepublishOnly": "npm run build"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZurNetwork/ZesTTY.git",
+    "directory": "packages/core"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

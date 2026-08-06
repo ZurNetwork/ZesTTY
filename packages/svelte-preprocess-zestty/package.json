@@ -18,5 +18,17 @@
   },
   "devDependencies": {
     "svelte": "^5.42.0"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZurNetwork/ZesTTY.git",
+    "directory": "packages/svelte-preprocess-zestty"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "index.js"
+  ]
 }
