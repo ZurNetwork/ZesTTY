@@ -341,7 +341,7 @@ impl Checker<'_> {
                 self.err(
                     ident.span,
                     &format!(
-                        "duplicate zts declaration `{}` in this scope (each enum/newtype \
+                        "duplicate zts declaration `{}` in this scope (each enum/newtype/union \
                          expands to a type alias AND a const of that name)",
                         ident.sym
                     ),
@@ -685,6 +685,7 @@ impl Visit for Checker<'_> {
     }
 
     fn visit_zts_enum_decl(&mut self, e: &ZtsEnumDecl) {
+        self.note_global_this_shadow(&e.ident);
         let mut seen: HashSet<&swc_atoms::Atom> = HashSet::with_capacity(e.variants.len());
         for variant in &e.variants {
             if !seen.insert(&variant.name.sym) {
@@ -716,6 +717,14 @@ impl Visit for Checker<'_> {
     }
 
     fn visit_zts_union_decl(&mut self, u: &ZtsUnionDecl) {
+        // Union names are bindings like any other (globalThis shadow ban +
+        // __zts prefix reservation apply) — review finding 1/2.
+        self.note_global_this_shadow(&u.ident);
+        // The parser cannot produce a zero-member union, but ZtsUnionDecl
+        // is public API — defend here too (finding 7).
+        if u.members.is_empty() {
+            self.err(u.span, "union must have at least one member");
+        }
         let mut seen: HashSet<&swc_atoms::Wtf8Atom> = HashSet::with_capacity(u.members.len());
         for m in &u.members {
             if !seen.insert(&m.value) {
@@ -723,6 +732,11 @@ impl Visit for Checker<'_> {
             }
         }
         u.visit_children_with(self);
+    }
+
+    fn visit_zts_newtype_decl(&mut self, n: &ZtsNewtypeDecl) {
+        self.note_global_this_shadow(&n.ident);
+        n.visit_children_with(self);
     }
 
     fn visit_ts_enum_decl(&mut self, e: &TsEnumDecl) {

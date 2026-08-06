@@ -336,7 +336,7 @@ type DeleteOutcome = 'soft' | 'hard' | 'unknown';
 const DeleteOutcome = {
   values: ['soft', 'hard', 'unknown'] as const,
   has: (__ztsRaw: string): __ztsRaw is DeleteOutcome =>
-    DeleteOutcome.values.includes(__ztsRaw as DeleteOutcome),
+    DeleteOutcome.values.indexOf(__ztsRaw as DeleteOutcome) !== -1,
 };
 ```
 
@@ -346,8 +346,10 @@ mapping — while the closed side keeps exhaustive `match` (a missing member
 is a TS2345 naming it). Members are string literals only in v1 (numbers
 would widen the guard's parameter type); duplicates are a compile error;
 leading `|` allowed; same contextual-keyword commit rule, hoisting, and
-export behavior as `newtype`. The `includes` cast rides on the argument —
-a receiver cast would need parens the fixer strips (load-bearing).
+export behavior as `newtype`. The guard uses `indexOf` (ES5-clean —
+`includes` would raise the emitted-TS lib floor to ES2016), and its cast
+rides on the argument — a receiver cast would need parens the fixer strips
+(load-bearing).
 
 ### Deliberately deferred (do not implement yet)
 

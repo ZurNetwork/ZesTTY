@@ -1,0 +1,8 @@
+union globalThis = 'a' | 'b';
+
+declare const x: string;
+
+const r = match (x) {
+  'a' => 1,
+  _ => 0,
+};

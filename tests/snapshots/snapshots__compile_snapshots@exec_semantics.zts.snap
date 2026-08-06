@@ -56,7 +56,7 @@ const Grade = {
         'low',
         'high'
     ] as const,
-    has: (__ztsRaw: string): __ztsRaw is Grade =>Grade.values.includes(__ztsRaw as Grade)
+    has: (__ztsRaw: string): __ztsRaw is Grade =>Grade.values.indexOf(__ztsRaw as Grade) !== -1
 };
 // Executed by tests/tsc_exit.rs under node: every zts construct here must
 // produce the RIGHT VALUE at runtime, not merely typecheck. Guards against

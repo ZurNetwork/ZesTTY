@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_union_reserved_prefix.zts
+---
+error: identifiers starting with `__zts` are reserved for zts-generated code
+ --> tests/fixtures/errors/err_union_reserved_prefix.zts:1:7
+  |
+1 | union __ztsRaw = 'a' | 'b';
+  |       ^^^^^^^^
