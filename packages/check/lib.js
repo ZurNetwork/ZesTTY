@@ -11,9 +11,11 @@ import {
   writeFileSync,
   unlinkSync,
   existsSync,
+  watch,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { join, relative, resolve, dirname, basename } from "node:path";
+import { sep, join, relative, resolve, dirname, basename } from "node:path";
 
 const SKIP_DIRS = new Set([
   "node_modules",
@@ -425,6 +427,76 @@ export function generateTwins(
     );
   }
   return errorCount === 0 ? 0 : 1;
+}
+
+/**
+ * `zts-check --twins --watch [--exec <cmd>]` (issue #35): regenerate twins
+ * continuously while authoring `.zts`/`.ztsx`.
+ *
+ * - Watches ONLY zts sources (extension whitelist), so the `.ts` twins
+ *   `--twins` writes back can never re-trigger the watcher (no loop), and
+ *   whatever `--exec` writes (e.g. `svelte-kit sync` output) is inert too.
+ * - Changes are debounced and coalesced into one regeneration pass.
+ * - `exec` runs after each successful regeneration (the downstream sync
+ *   hook); its failure is reported but does not stop the watch.
+ *
+ * Returns `{ close() }`. Requires Node 20+ (recursive fs.watch on Linux).
+ */
+export function watchTwins(
+  root,
+  {
+    log = console.error,
+    exec = null,
+    preambleImport = true,
+    debounceMs = 100,
+  } = {},
+) {
+  root = resolve(root);
+  if (!existsSync(root)) {
+    log(`zts-check: no such directory: ${root}`);
+    return null;
+  }
+
+  const isSource = (name) => /\.zts(x?)$/.test(name);
+  const inSkippedDir = (rel) =>
+    rel.split(sep).some((segment) => SKIP_DIRS.has(segment));
+
+  const runOnce = () => {
+    const code = generateTwins(root, { log, preambleImport });
+    if (code === 0 && exec) {
+      const r = spawnSync(exec, {
+        shell: true,
+        cwd: root,
+        stdio: ["ignore", "inherit", "inherit"],
+      });
+      if (r.status !== 0) {
+        log(`zts-check: --exec failed (exit ${r.status ?? "signal"}): ${exec}`);
+      }
+    }
+    return code;
+  };
+
+  runOnce();
+  log(`zts-check: watching ${root} for .zts/.ztsx changes`);
+
+  let timer = null;
+  const watcher = watch(root, { recursive: true }, (_event, filename) => {
+    if (!filename || !isSource(filename) || inSkippedDir(filename)) {
+      return;
+    }
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      runOnce();
+    }, debounceMs);
+  });
+
+  return {
+    close() {
+      clearTimeout(timer);
+      watcher.close();
+    },
+  };
 }
 
 /** Marker-carrying .ts/.tsx files whose source no longer exists. */
