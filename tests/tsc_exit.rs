@@ -235,6 +235,55 @@ fn newtype_id_confusion_fails_tsc() {
 }
 
 #[test]
+fn try_operator_passes_tsc() {
+    ensure_core_dist();
+    let (ts_path, _) = compile_to("try_basic.zts", "exit_try.ts");
+    let (ok, text) = tsc_with(
+        &ts_path,
+        &[
+            "--strict",
+            "--module",
+            "esnext",
+            "--moduleResolution",
+            "bundler",
+        ],
+    );
+    assert!(ok, "tsc rejected try-operator output:\n{text}");
+}
+
+#[test]
+fn try_on_non_result_fails_tsc() {
+    // `?` on a non-Result: the generated `__t.kind` has nothing to read.
+    let (ts_path, _) = compile_to("try_on_non_result.zts", "exit_try_nonresult.ts");
+    let (ok, text) = tsc_with(&ts_path, &[]);
+    assert!(!ok, "`?` on a non-Result must fail tsc (without --strict)");
+    assert!(
+        text.contains("error TS2339") && text.contains("kind"),
+        "expected a missing-`kind` error:\n{text}"
+    );
+}
+
+#[test]
+fn try_err_type_mismatch_fails_tsc() {
+    // The propagated Err must satisfy the enclosing return type — tsc
+    // enforces error-type compatibility on the generated `return __t;`.
+    ensure_core_dist();
+    let (ts_path, _) = compile_to("try_err_type_mismatch.zts", "exit_try_mismatch.ts");
+    let (ok, text) = tsc_with(
+        &ts_path,
+        &["--module", "esnext", "--moduleResolution", "bundler"],
+    );
+    assert!(
+        !ok,
+        "incompatible Err type must fail tsc (without --strict)"
+    );
+    assert!(
+        text.contains("error TS2322"),
+        "expected a return-type assignability error:\n{text}"
+    );
+}
+
+#[test]
 fn arm_body_maps_to_original_span() {
     // Phase 2's "breakpoint in .zts" story depends on arm bodies mapping
     // back to their source, not just the absurd call.

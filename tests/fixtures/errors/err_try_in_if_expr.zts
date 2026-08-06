@@ -1,0 +1,8 @@
+declare function f(): { kind: "Ok"; value: number } | { kind: "Err"; error: string };
+
+function use(c: boolean): number {
+  return if (c) {
+    const v = f()?;
+    v
+  } else { 0 };
+}

@@ -1,0 +1,16 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/try_on_non_result.zts
+---
+// Compiles in zts; tsc must reject it — `?` on a non-Result has no `kind`
+// property to test (TS2339 on the generated `__t.kind`).
+function bad(): number {
+    const __t = 5;
+    if (__t.kind === "Err") {
+        return __t;
+    }
+    const x = __t.value;
+    return x;
+}
+console.log(bad());

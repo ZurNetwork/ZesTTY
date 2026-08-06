@@ -74,4 +74,42 @@ const m = Meters(5);
 expect("newtype identity", m, 5);
 expect("newtype arithmetic", m + 1, 6);
 
+// Phase 5: `?` try operator — Ok unwraps, Err propagates, bare form
+// discards the value but still propagates.
+enum NumRes {
+  Ok { value: number },
+  Err { error: string },
+}
+
+let bareRan = 0;
+function tryDouble(r: NumRes, gate: NumRes): NumRes {
+  gate?;
+  bareRan += 1;
+  const n = r?;
+  return NumRes.Ok(n * 2);
+}
+
+const okd = tryDouble(NumRes.Ok(21), NumRes.Ok(0));
+const okv = match (okd) {
+  Ok { value } => value,
+  Err { error } => error.length,
+};
+expect("try ok", okv, 42);
+expect("try bare ran", bareRan, 1);
+
+const erd = tryDouble(NumRes.Err("nope"), NumRes.Ok(0));
+const erv = match (erd) {
+  Ok { value } => `${value}`,
+  Err { error } => error,
+};
+expect("try err propagates", erv, "nope");
+
+const gated = tryDouble(NumRes.Ok(1), NumRes.Err("gate"));
+const gv = match (gated) {
+  Ok { value } => `${value}`,
+  Err { error } => error,
+};
+expect("try bare-stmt propagates", gv, "gate");
+expect("try bare-stmt short-circuits", bareRan, 2);
+
 console.log("exec_semantics: all assertions passed");

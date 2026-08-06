@@ -1,0 +1,16 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_try_nested.zts
+---
+error: `?` is not allowed here in v1: it must be the whole right-hand side of a `const`/`let` declaration, a `return`, or an expression statement inside a function body (nested `?` would silently reorder side effects)
+ --> tests/fixtures/errors/err_try_nested.zts:5:5
+  |
+5 |   g(f()?, [f()?]);
+  |     ^^^^
+
+error: `?` is not allowed here in v1: it must be the whole right-hand side of a `const`/`let` declaration, a `return`, or an expression statement inside a function body (nested `?` would silently reorder side effects)
+ --> tests/fixtures/errors/err_try_nested.zts:5:12
+  |
+5 |   g(f()?, [f()?]);
+  |            ^^^^

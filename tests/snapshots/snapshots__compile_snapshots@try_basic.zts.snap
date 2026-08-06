@@ -1,0 +1,37 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/try_basic.zts
+---
+import { type Result, Ok, Err } from "@zestty/core";
+function divide(a: number, b: number): Result<number, string> {
+    return b === 0 ? Err("division by zero") : Ok(a / b);
+}
+// All three sanctioned v1 forms: const-init, bare statement, return.
+function halveTwice(n: number): Result<number, string> {
+    const __t = divide(n, 2);
+    if (__t.kind === "Err") {
+        return __t;
+    }
+    const once = __t.value;
+    const __t1 = divide(once, 2);
+    if (__t1.kind === "Err") {
+        return __t1;
+    }
+    const __t2 = divide(once, 2);
+    if (__t2.kind === "Err") {
+        return __t2;
+    }
+    const twice = __t2.value;
+    return Ok(twice);
+}
+declare function nested(n: number): Result<Result<number, string>, string>;
+function chain(n: number): Result<number, string> {
+    const __t = nested(n);
+    if (__t.kind === "Err") {
+        return __t;
+    }
+    // `return e?;` — the unwrapped Ok value must satisfy the return type.
+    return __t.value;
+}
+console.log(halveTwice(8), chain(4));

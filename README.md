@@ -232,11 +232,55 @@ next to enums: one decl becomes two (type + const, legal declaration
 merging), hoisted past the directive prologue/imports with the same
 order-independence enums get, `export` preserved on both halves.
 
+### 6. `?` try operator (Phase 5)
+
+Postfix `?` propagates `Err` with an early return — unchecked errors stay a
+compile error, checked ones stop needing ceremony.
+
+```ts
+// zts source
+function boot(raw: string): Result<number, string> {
+  const port = parsePort(raw)?;
+  return Ok(port + 1);
+}
+
+// generated TS (statement-level hoist)
+function boot(raw: string): Result<number, string> {
+  const __t = parsePort(raw);
+  if (__t.kind === "Err") {
+    return __t;
+  }
+  const port = __t.value;
+  return Ok(port + 1);
+}
+```
+
+tsc enforces the whole contract on the generated shape alone: `.kind` on a
+non-Result is TS2339, and `return __t` fails (TS2322) unless the enclosing
+return type accepts the `Err` side — error-type compatibility with zero
+checker work on our side.
+
+Parse rule (locked): `?` is a try operator ONLY where a ternary is
+impossible — immediately before `;` `)` `,` `]`. One-token lookahead, fully
+deterministic; `?.` stays optional chaining, `??` stays nullish coalescing,
+optional parameters (`(a, b?) => …`) keep winning for bare identifiers. The
+operand is the whole conditional-level expression (`a + f()?` tries
+`a + f()`).
+
+v1 statement-shape lock (review this before widening): `?` must be the
+WHOLE right-hand side of a `const`/`let` declaration, a `return` argument,
+or a bare expression statement, inside a real function body. Nested uses
+(`g(f()?)`, `[f()?]`) are semantic errors — hoisting them would silently
+reorder side effects (`g(a(), f()?)` would run `f` before `a`). Also banned:
+module top level (nothing to return from) and match-arm / if-expression
+blocks (they lower to IIFEs, which would hijack the early return; a nested
+real function resets the rule).
+
 ### Deliberately deferred (do not implement yet)
 
-`Option<T>`, the `?` operator, `let`/`let mut`, traits (dictionary passing),
-no-untracked-throws, move checking. (Newtypes shipped in Phase 5 — see
-feature 5 above.)
+`Option<T>`, `let`/`let mut`, traits (dictionary passing),
+no-untracked-throws, move checking. (Newtypes and `?` shipped in Phase 5 —
+see features 5 and 6 above.)
 
 **Shipped 2026-08-06 (Zuri-approved): `not` as a prefix operator** —
 pure sugar, `not <unary-expr>` → `!expr`, same precedence as `!` (so
@@ -353,13 +397,16 @@ Each repeats the Phase 1 loop (fork tests, snapshots, tsc exit test, review gate
       (`string & { readonly __ztsNewtype: "AccountId" }`) + factory.
       Kills the ID-confusion bug class; contextual parse mirrors the
       `type`-alias commit rule (same-line ident follows). See feature 5.
-- [ ] `?` try operator: postfix `?` propagates `Err` with an early return;
+- [x] `?` try operator: postfix `?` propagates `Err` with an early return;
       tsc enforces error-type compatibility against the enclosing return
       type (no checker work on our side). Constraints (locked): `?` fires
       only where a ternary is impossible (before `;` `)` `,` `]`) — `?.`
       belongs to optional chaining, so `f()?.g` chaining is unavailable
-      (use `(f()?)` or bind); banned inside match arms / if-expression
-      blocks in v1 (IIFE boundary would hijack the early return).
+      (bind first); banned inside match arms / if-expression blocks in v1
+      (IIFE boundary would hijack the early return). Shipped with an extra
+      v1 statement-shape lock — whole RHS of `const`/`let`/`return`/expr
+      statement only, nested uses would silently reorder side effects. See
+      feature 6.
 
 Dispositions from the same review (recorded so they are not re-litigated):
 

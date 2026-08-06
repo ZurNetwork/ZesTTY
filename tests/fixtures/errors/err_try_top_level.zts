@@ -1,0 +1,3 @@
+declare function f(): { kind: "Ok"; value: number } | { kind: "Err"; error: string };
+
+const x = f()?;
