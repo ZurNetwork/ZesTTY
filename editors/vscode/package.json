@@ -2,7 +2,7 @@
   "name": "zestty",
   "displayName": "ZesTTY",
   "description": "Language support for ZesTTY (zts) \u2014 a Rust-flavored superset of TypeScript with compiler-enforced exhaustiveness.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "zurnetwork",
   "license": "MIT",
   "repository": {
@@ -63,7 +63,7 @@
     "onLanguage:zts"
   ],
   "dependencies": {
-    "typescript-zestty-plugin": "^0.3.0",
+    "typescript-zestty-plugin": "^0.3.1",
     "vscode-languageclient": "^9.0.1"
   },
   "capabilities": {
