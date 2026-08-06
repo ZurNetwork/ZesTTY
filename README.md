@@ -277,14 +277,14 @@ arm body is a compile error until arms can lower to async IIFEs.
 - **Declare the Svelte preprocessor in `svelte.config.js`**, not via inline
   `sveltekit({...})` options in `vite.config.ts` — SvelteKit ignores
   `svelte.config.js` entirely when options are passed inline.
-- **svelte-check cannot type-check `lang="zts"` blocks** (v4.6): it runs
-  the preprocess chain but checks the ORIGINAL source and keys the language
-  off the original `lang` attribute. `.zts` modules are likewise invisible
-  to a consumer's `tsc --noEmit`. Builds catch zts syntax errors; nothing
-  in a consumer's CI catches type errors — the exhaustiveness keystone
-  never fires there. Until `zts-check` exists (see Phase 3), the honest
-  guidance is: author `.zts`, commit the generated `.ts` twins for checking,
-  and keep Svelte script blocks `lang="ts"`.
+- **svelte-check cannot type-check `lang="zts"` blocks itself** (v4.6): it
+  checks the ORIGINAL source and keys the language off the original `lang`
+  attribute. **`zts-check` closes the gap completely**: it checks `.zts`
+  modules via twins AND runs svelte-check over a shadow tree where each
+  zts component carries its compiled script as `lang="ts"` — so TEMPLATE
+  bindings against zts script members are fully type-checked, with
+  diagnostics remapped to original positions. Put `zts-check` in CI next
+  to your build; `--no-svelte` skips the component pass if you need to.
 
 ### Phase 3 — DX
 

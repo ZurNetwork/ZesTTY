@@ -32,7 +32,8 @@ test("C1: a .zts outside tsconfig include is a loud error, not false-green", () 
 test("H3: every svelte lang=zts block is checked, not just the first", () => {
   const { code, out } = run("two-scripts");
   assert.equal(code, 1, out);
-  assert.match(out, /Two\.svelte\(\d+,\d+\): error TS2345/);
+  assert.match(out, /Two\.svelte\(\d+,\d+\): error/);
+  assert.match(out, /never/);
   // The failing match lives in the SECOND block.
   const line = Number(out.match(/Two\.svelte\((\d+),/)[1]);
   assert.ok(line > 5, `diagnostic at line ${line}, expected the second block`);

@@ -3,6 +3,7 @@ import { ztsCheck } from "./lib.js";
 
 const args = process.argv.slice(2);
 const keep = args.includes("--keep");
+const svelte = !args.includes("--no-svelte");
 const root = args.find((a) => !a.startsWith("--")) ?? process.cwd();
 
 if (args.includes("--help") || args.includes("-h")) {
@@ -20,4 +21,4 @@ if (args.includes("--help") || args.includes("-h")) {
   process.exit(2);
 }
 
-process.exit(ztsCheck(root, { keep }));
+process.exit(ztsCheck(root, { keep, svelte }));

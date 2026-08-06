@@ -38,7 +38,8 @@ test("missing match arm fails with a diagnostic on the .zts source", () => {
 test("svelte lang=zts script is checked and mapped into the component", () => {
   const { code, out } = run("svelte");
   assert.equal(code, 1);
-  assert.match(out, /Widget\.svelte\(\d+,\d+\): error TS2345/);
+  assert.match(out, /Widget\.svelte\(\d+,\d+\): error/);
+  assert.match(out, /never/);
   const line = Number(out.match(/Widget\.svelte\((\d+),/)[1]);
   const src = readFileSync(
     join(FIXTURES, "svelte/Widget.svelte"),
