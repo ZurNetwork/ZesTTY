@@ -58,10 +58,11 @@ struct LowerEnums;
 fn variant_type_lit(variant: &ZtsEnumVariant) -> TsType {
     let mut members = Vec::with_capacity(variant.fields.len() + 1);
 
-    // kind: "Variant"
+    // readonly kind: "Variant" — the discriminant is NEVER mutable (a
+    // kind write would let a value lie about its own variant).
     members.push(TsTypeElement::TsPropertySignature(TsPropertySignature {
         span: variant.name.span,
-        readonly: false,
+        readonly: true,
         key: Box::new(Expr::Ident(Ident::new_no_ctxt(
             atom!("kind"),
             variant.name.span,
@@ -81,10 +82,13 @@ fn variant_type_lit(variant: &ZtsEnumVariant) -> TsType {
         })),
     }));
 
+    // Payload fields are readonly by default (Phase 7 — THE 0.4.0
+    // breaking change); `mut field: T` opts out per field. Erased,
+    // shallow, direct-write protection only — recorded in README feat 3.
     for field in &variant.fields {
         members.push(TsTypeElement::TsPropertySignature(TsPropertySignature {
             span: field.span,
-            readonly: false,
+            readonly: !field.is_mut,
             key: Box::new(Expr::Ident(Ident::new_no_ctxt(
                 field.name.sym.clone(),
                 field.name.span,

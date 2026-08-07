@@ -5,11 +5,11 @@ input_file: tests/fixtures/enum_basic.zts
 ---
 import { __ztsAbsurd } from "@zestty/core";
 type Shape = {
-    kind: "Circle";
-    radius: number;
+    readonly kind: "Circle";
+    readonly radius: number;
 } | {
-    kind: "Square";
-    side: number;
+    readonly kind: "Square";
+    readonly side: number;
 };
 const Shape = {
     Circle: (radius: number): Shape =>({

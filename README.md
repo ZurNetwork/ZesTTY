@@ -192,9 +192,11 @@ enum Shape {
 Lowers to a discriminated union type + constructors:
 
 ```ts
-// generated TS
+// generated TS (fields readonly by default since 0.4.0 — Phase 7's
+// breaking change; `mut field: T` opts out per field, `kind` never can)
 type Shape =
-  { kind: "Circle"; radius: number } | { kind: "Square"; side: number };
+  | { readonly kind: "Circle"; readonly radius: number }
+  | { readonly kind: "Square"; readonly side: number };
 
 const Shape = {
   Circle: (radius: number): Shape => ({ kind: "Circle", radius }),
@@ -203,6 +205,18 @@ const Shape = {
 ```
 
 **Never emit TypeScript `enum`.** Not ever. Tagged unions only.
+
+**Readonly payloads (Phase 7, 0.4.0 — BREAKING).** Writing a payload
+field is a TS2540 unless the field is declared `mut` (`Cell { mut count:
+number }`); `kind` is always readonly with no opt-out (a kind write
+would let a value lie about its own variant). Migration is mechanical —
+one TS2540 per mutation site, fix = add `mut`. `mut` is contextual: a
+field literally named `mut` keeps working (`mut: number`, and
+`mut mut: number` is a mutable field named mut). Honest limits
+(recorded): TS `readonly` is shallow (an array-typed field's contents
+stay mutable) and not part of structural assignability — the guarantee
+fires on direct writes through the typed view, where the aliased-
+mutation bug class actually lives.
 
 Note: `enum` in zts source _shadows_ TS's enum keyword — this is a deliberate
 semantic replacement, the one place zts is not a strict superset. TS `enum`

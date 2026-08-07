@@ -5,13 +5,13 @@ input_file: tests/fixtures/enum_generic_types.zts
 ---
 import { __ztsAbsurd } from "@zestty/core";
 type Tree = {
-    kind: "Leaf";
-    value: number;
+    readonly kind: "Leaf";
+    readonly value: number;
 } | {
-    kind: "Node";
-    left: Tree;
-    right: Tree;
-    tags: string[];
+    readonly kind: "Node";
+    readonly left: Tree;
+    readonly right: Tree;
+    readonly tags: string[];
 };
 const Tree = {
     Leaf: (value: number): Tree =>({

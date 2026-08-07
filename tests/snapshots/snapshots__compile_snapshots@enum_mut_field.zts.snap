@@ -1,0 +1,23 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/enum_mut_field.zts
+---
+// Phase 7: payload fields are readonly by default; `mut` opts out.
+// This file mutates ONLY the mut field — it must pass tsc.
+type Counter = {
+    readonly kind: "Cell";
+    count: number;
+    readonly label: string;
+};
+const Counter = {
+    Cell: (count: number, label: string): Counter =>({
+            kind: "Cell",
+            count,
+            label
+        })
+};
+const c = Counter.Cell(0, "clicks");
+c.count += 1;
+c.count = 10;
+export const n: number = c.count;

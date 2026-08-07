@@ -5,14 +5,14 @@ input_file: tests/fixtures/enum_export_multi_field.zts
 ---
 import { __ztsAbsurd } from "@zestty/core";
 export type Event = {
-    kind: "Click";
-    x: number;
-    y: number;
+    readonly kind: "Click";
+    readonly x: number;
+    readonly y: number;
 } | {
-    kind: "Key";
-    code: string;
+    readonly kind: "Key";
+    readonly code: string;
 } | {
-    kind: "Blur";
+    readonly kind: "Blur";
 };
 export const Event = {
     Click: (x: number, y: number): Event =>({

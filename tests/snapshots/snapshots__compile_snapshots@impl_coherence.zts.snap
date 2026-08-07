@@ -4,8 +4,8 @@ expression: out.code
 input_file: tests/fixtures/impl_coherence.zts
 ---
 type Robot = {
-    kind: "Unit";
-    id: number;
+    readonly kind: "Unit";
+    readonly id: number;
 };
 const Robot = {
     Unit: (id: number): Robot =>({
