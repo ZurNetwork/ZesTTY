@@ -1,0 +1,14 @@
+// Phase 7: `T[+]` — non-empty arrays. Lowers to `[T, ...T[]]`; callers
+// must prove non-emptiness and `xs[0]` is `T`, not `T | undefined`.
+function head<T>(xs: T[+]): T {
+  return xs[0];
+}
+
+export const first: number = head([1, 2, 3]);
+
+// Composes as an ordinary type: annotations, aliases, readonly.
+type Batch = string[+];
+declare const batch: Batch;
+export const label: string = head(batch);
+declare const ro: readonly number[+][];
+export const nested = ro;

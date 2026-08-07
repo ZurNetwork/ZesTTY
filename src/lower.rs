@@ -752,6 +752,41 @@ fn expand_try_stmt(stmt: Stmt, out: &mut Vec<Stmt>) {
 }
 
 impl VisitMut for Lower {
+    fn visit_mut_ts_type(&mut self, t: &mut TsType) {
+        t.visit_mut_children_with(self);
+
+        // `T[+]` (Phase 7) → `[T, ...T[]]` — pure type plane: callers
+        // must prove non-emptiness, `xs[0]` is `T`, fully erased.
+        // Children first, so nested sugar (`string[+][+]`) lowers
+        // inside-out; spans stay original.
+        if let TsType::ZtsNonEmptyArray(ne) = t {
+            let span = ne.span;
+            let elem = ne.elem_type.clone();
+            let rest_elem = elem.clone();
+            *t = TsType::TsTupleType(TsTupleType {
+                span,
+                elem_types: vec![
+                    TsTupleElement {
+                        span: elem.span(),
+                        label: None,
+                        ty: elem,
+                    },
+                    TsTupleElement {
+                        span,
+                        label: None,
+                        ty: Box::new(TsType::TsRestType(TsRestType {
+                            span,
+                            type_ann: Box::new(TsType::TsArrayType(TsArrayType {
+                                span,
+                                elem_type: rest_elem,
+                            })),
+                        })),
+                    },
+                ],
+            });
+        }
+    }
+
     fn visit_mut_stmts(&mut self, stmts: &mut Vec<Stmt>) {
         // Children first: matches/if-exprs inside try operands (and
         // everything else) are already vanilla TS by the time the

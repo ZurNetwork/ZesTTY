@@ -108,3 +108,9 @@ test("ResultPipe unwrap terminals", async () => {
   assert.equal(ResultPipe(Err("boom")).unwrap_or(42), 42);
   assert.throws(() => ResultPipe(Err("boom")).unwrap(), /boom/);
 });
+
+test("isNonEmpty narrows and gates (issue Phase 7 item 3)", async () => {
+  const { isNonEmpty } = await import("../dist/index.js");
+  assert.equal(isNonEmpty([1]), true);
+  assert.equal(isNonEmpty([]), false);
+});

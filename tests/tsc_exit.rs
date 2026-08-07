@@ -657,6 +657,38 @@ fn result_from_core_composes_with_match() {
 }
 
 #[test]
+fn non_empty_array_passes_tsc() {
+    // Phase 7 `T[+]`: proven-non-empty call sites pass, xs[0] is T even
+    // under noUncheckedIndexedAccess (the whole point of the tuple).
+    let (ts_path, _) = compile_to("non_empty_array.zts", "exit_nonempty.ts");
+    let (ok, text) = tsc_with(
+        &ts_path,
+        &[
+            "--strict",
+            "--noUncheckedIndexedAccess",
+            "--module",
+            "esnext",
+            "--moduleResolution",
+            "bundler",
+        ],
+    );
+    assert!(ok, "tsc rejected valid non-empty array usage:\n{text}");
+}
+
+#[test]
+fn non_empty_array_rejects_possibly_empty() {
+    // The safety property: [] and plain T[] cannot satisfy T[+].
+    let (ts_path, _) = compile_to("non_empty_array_empty_call.zts", "exit_nonempty_bad.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(!ok, "tsc must reject possibly-empty arguments for T[+]");
+    assert_eq!(
+        text.matches("error TS2345").count(),
+        2,
+        "expected one TS2345 per bad call site:\n{text}"
+    );
+}
+
+#[test]
 fn mut_field_mutation_passes_tsc() {
     // Phase 7: `mut` fields opt out of readonly — mutating one is fine.
     let (ts_path, _) = compile_to("enum_mut_field.zts", "exit_mut_field.ts");
