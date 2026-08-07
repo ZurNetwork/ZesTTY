@@ -153,6 +153,25 @@ export function isNonEmpty<T>(xs: readonly T[]): xs is [T, ...T[]] {
 }
 
 /**
+ * Type-level machinery for zts `constrict` assertions (Phase 7) —
+ * type-only exports, fully erased. Not for application code: the zts
+ * compiler references these from the lowering of `constrict A == B;`
+ * (`type __ztsConstrict = __ztsExpect<__ztsEqual<A, B>>;`). A false
+ * claim fails `__ztsExpect`'s constraint (TS2344), remapped to the
+ * assert's own line.
+ *
+ * `__ztsEqual` is the exact-equality trick (conditional-type identity
+ * over function signatures): it distinguishes branded newtypes, `any`
+ * vs `unknown`, and optionality — mutual `extends` would not.
+ */
+export type __ztsExpect<T extends true> = T;
+export type __ztsEqual<X, Y> =
+  (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
+    ? true
+    : false;
+export type __ztsNot<B extends boolean> = B extends true ? false : true;
+
+/**
  * The exhaustiveness keystone the zts compiler references in
  * committed-twins mode (`import { __ztsAbsurd } from "@zestty/core"`).
  * Not for application code: if this ever throws, a `match` was compiled

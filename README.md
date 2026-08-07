@@ -471,6 +471,39 @@ Where Rust spends a type checker, zts spends a method name (e.g.
 `from_string`/`from_number` instead of two merged `From` impls). That is
 the trade the whole language is built on.
 
+### 9. `constrict` — erased type assertions (Phase 7, shipped)
+
+```rust
+newtype UserId = string;
+newtype OrderId = string;
+
+constrict UserId != OrderId;                  // brands really are distinct
+constrict keyof Config == "host" | "port";   // shape pinned against drift
+constrict ApiResult extends Result<User, ApiError>;
+```
+
+Lowers to erased type aliases whose generic constraint fails when the
+claim is false — a TS2344 at the assert's own line:
+
+```ts
+import type { __ztsExpect, __ztsEqual, __ztsNot } from "@zestty/core";
+type __ztsConstrict0 = __ztsExpect<__ztsNot<__ztsEqual<UserId, OrderId>>>;
+```
+
+Operators: `==` (EXACT equality via the conditional-fn identity trick —
+distinguishes brands, `any` vs `unknown`, optionality; mutual `extends`
+would not), `!=`, `extends` (one-way assignability). Load-bearing
+details: alias names self-uniquify with a counter (hygiene is not
+TS-type-aware and will not rename duplicate TYPE aliases); the LHS
+parses as a NON-conditional type or `A extends B` would be swallowed as
+a conditional-type head; inline mode (`--inline-preamble` / scripts)
+emits the three helper aliases locally with the probe fn-types
+explicitly parenthesized (no type-level fixer exists — the newtype
+parens lesson). Renamed from `static_assert` with parens dropped
+(recorded in Phase 7 item 2: the paren form is legal TS and would steal
+meaning). Contextual: `const constrict = 1` and `constrict(x)` stay
+vanilla; commit = same-line word.
+
 ### Deliberately deferred (do not implement yet)
 
 `Option<T>`, `let`/`let mut`, no-untracked-throws, move checking.
@@ -751,7 +784,7 @@ Language:
       `let`/`let mut`). Honest limits (recorded): TS `readonly` is
       shallow, and readonly is not part of structural assignability —
       the guarantee fires on direct writes through the typed view.
-- [ ] 2. **`constrict A == B;`** (renamed from `static_assert`,
+- [x] 2. **`constrict A == B;`** — SHIPPED, see feature 9 (renamed from `static_assert`,
       parens DROPPED — both re-decided with Zuri 2026-08-07: the paren
       form `static_assert(a == b)` is already legal TS — a call with a
       comparison — so it would steal meaning from valid programs, and

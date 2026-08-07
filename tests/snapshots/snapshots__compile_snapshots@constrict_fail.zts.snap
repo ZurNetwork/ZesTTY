@@ -1,0 +1,14 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/constrict_fail.zts
+---
+import type { __ztsExpect, __ztsEqual, __ztsNot } from "@zestty/core";
+// A FALSE claim: compiles in zts (assertions are tsc's verdict), tsc
+// rejects with TS2344 remapped to the constrict's own line.
+type Config = {
+    host: string;
+    port: number;
+};
+type __ztsConstrict0 = __ztsExpect<__ztsEqual<keyof Config, "host">>;
+export const bad = 1;

@@ -19,6 +19,9 @@
       "include": "#zts-newtype-declaration"
     },
     {
+      "include": "#zts-constrict-declaration"
+    },
+    {
       "include": "#zts-not-operator"
     },
     {
@@ -162,6 +165,25 @@
           "name": "entity.name.type.zts"
         }
       }
+    },
+    "zts-constrict-declaration": {
+      "comment": "`constrict A == B;` (Phase 7) — contextual, same-line WORD commit rule (covers idents and type-words like keyof); `const constrict = 1` / `constrict(x)` stay vanilla. Operands are types (embedded TS coloring); the operator gets a keyword scope.",
+      "begin": "(?<![.$])\\b(constrict)\\b(?=[ \\t]+[A-Za-z_$])",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.constrict.zts"
+        }
+      },
+      "end": ";|$",
+      "patterns": [
+        {
+          "match": "==|!=|\\b(extends)\\b",
+          "name": "keyword.operator.constrict.zts"
+        },
+        {
+          "include": "source.ts"
+        }
+      ]
     },
     "zts-not-operator": {
       "comment": "`not` — RESERVED word since 0.4.0 (issue #60): always the negation operator in expression position, including `not(x)` and `not (x)`. Property positions (`obj.not`, `{ not: 1 }`) stay uncolored via the [.$] guard; a `:` right after means a property key, also uncolored.",
