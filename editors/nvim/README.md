@@ -83,6 +83,16 @@ vim.lsp.config("ts_ls", {
 })
 ```
 
+## Indentation
+
+zts constructs (impl blocks above all) are ERROR nodes to the reused
+TypeScript tree-sitter parser, and tree-sitter's indent engine bails
+inside error nodes — with treesitter indent enabled, `<CR>` inside an
+impl block used to reset to column 0 (issue #57). The ftplugins now
+override `indentexpr` with the stock Vim TypeScript indent (regex-based,
+superset-tolerant), scheduled after nvim-treesitter's attach so the
+override wins. No configuration needed.
+
 ## Notes
 
 - Filetype registration lives in `ftdetect/zts.lua`, which plugin
