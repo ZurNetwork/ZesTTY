@@ -738,6 +738,45 @@ fn impl_wrong_return_fails_satisfies() {
 }
 
 #[test]
+fn constrict_true_claims_pass_tsc() {
+    // Phase 7 item 2: every claim in the fixture is TRUE — the module
+    // type-checks, and the emit is types only (nothing new at runtime).
+    let (ts_path, _) = compile_to("constrict_ok.zts", "exit_constrict_ok.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected true constrict claims:\n{text}");
+
+    // Inline mode (no @zestty/core): the helper aliases are emitted
+    // locally and the file is fully self-contained.
+    let fixture_path = repo_root().join("tests/fixtures/constrict_ok.zts");
+    let opts = zestty::Options {
+        preamble_import: false,
+        ..Default::default()
+    };
+    let (out, diags) = common::compile_fixture_with(&fixture_path, opts)
+        .unwrap_or_else(|(e, d)| panic!("constrict_ok failed inline: {e}\n{d}"));
+    assert_eq!(diags, "");
+    assert!(!out.code.contains("@zestty/core"));
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    let ts_path = dir.join("exit_constrict_inline.ts");
+    std::fs::write(&ts_path, &out.code).unwrap();
+    let (ok, text) = tsc_with(&ts_path, &["--strict"]);
+    assert!(ok, "inline constrict output not self-contained:\n{text}");
+}
+
+#[test]
+fn constrict_false_claim_fails_tsc() {
+    // The safety property: a false claim is a TS2344 (constraint of
+    // __ztsExpect not satisfied) at the assert's own alias.
+    let (ts_path, _) = compile_to("constrict_fail.zts", "exit_constrict_fail.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(!ok, "tsc must reject a false constrict claim");
+    assert!(
+        text.contains("TS2344"),
+        "expected the constraint-violation error:\n{text}"
+    );
+}
+
+#[test]
 fn impl_assoc_and_multi_from_pass_tsc() {
     // Traits v2: associated functions with type-args, and the
     // comma-header multi-instantiation with one union body, both

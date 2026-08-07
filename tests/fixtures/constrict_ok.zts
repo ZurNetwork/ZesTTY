@@ -1,0 +1,14 @@
+// Phase 7: `constrict` — erased type-level assertions. All claims here
+// are TRUE; the module must pass tsc with zero runtime output added.
+newtype UserId = string;
+newtype OrderId = string;
+
+type Config = { host: string; port: number };
+
+constrict UserId != OrderId;
+constrict UserId != string;
+constrict keyof Config == "host" | "port";
+constrict UserId extends string;
+constrict Config extends { host: string };
+
+export const ok = 1;
