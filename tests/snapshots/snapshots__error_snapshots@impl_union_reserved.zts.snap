@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/impl_union_reserved.zts
+---
+error: method `has` collides with the built-in `has` member of union `Level`
+ --> tests/fixtures/errors/impl_union_reserved.zts:9:3
+  |
+9 |   has(raw: string): Level {
+  |   ^^^

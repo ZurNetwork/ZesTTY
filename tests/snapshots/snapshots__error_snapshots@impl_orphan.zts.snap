@@ -3,7 +3,7 @@ source: tests/snapshots.rs
 expression: diags
 input_file: tests/fixtures/errors/impl_orphan.zts
 ---
-error: impl target `Missing` is not a zts enum declared in this scope (the orphan rule: an impl lives in the module that declares its type; v1 supports enum impls only)
+error: impl target `Missing` is not a zts enum, newtype, or union declared in this scope (the orphan rule: an impl lives in the module that declares its type)
  --> tests/fixtures/errors/impl_orphan.zts:6:18
   |
 6 | impl Display for Missing {

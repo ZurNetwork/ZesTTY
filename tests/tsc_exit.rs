@@ -790,6 +790,16 @@ fn impl_assoc_and_multi_from_pass_tsc() {
 }
 
 #[test]
+fn impl_newtype_and_union_pass_tsc() {
+    // Phase 7 item 5: newtype impls (Object.assign keeps the factory
+    // callable AND carrying methods) and union impls (object merge),
+    // both with working dictionary passing.
+    let (ts_path, _) = compile_to("impl_newtype_union.zts", "exit_impl_nu.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected newtype/union impl output:\n{text}");
+}
+
+#[test]
 fn impl_from_wrong_arg_type_fails_satisfies() {
     // Traits v2 conformance: names match (semantic passes), the body's
     // param type contradicts the header's instantiation — tsc rejects

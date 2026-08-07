@@ -352,7 +352,7 @@ fn lower_enum(e: &ZtsEnumDecl, impls: Vec<ZtsImplDecl>) -> (Decl, Decl) {
 }
 
 /// One zts newtype → (branded type alias, factory const).
-fn lower_newtype(n: &ZtsNewtypeDecl) -> (Decl, Decl) {
+fn lower_newtype(n: &ZtsNewtypeDecl, impls: Vec<ZtsImplDecl>) -> (Decl, Decl) {
     // { readonly __ztsNewtype: "Name" }
     let brand = TsType::TsTypeLit(TsTypeLit {
         span: n.ident.span,
@@ -438,6 +438,57 @@ fn lower_newtype(n: &ZtsNewtypeDecl) -> (Decl, Decl) {
         })),
     };
 
+    // Phase 7 item 5: a newtype factory is an ARROW, not an object — its
+    // impls attach via `globalThis.Object.assign(factory, { methods }
+    // satisfies <absorber> & Trait<Name> & ...)`. Object.assign's return
+    // type is the intersection, so the const stays callable AND carries
+    // the methods; the dictionary story is unchanged (the const
+    // structurally satisfies each instantiated trait).
+    let init: Expr = if impls.is_empty() {
+        Expr::Arrow(arrow)
+    } else {
+        let satisfies_ty = impl_satisfies_type(&n.ident, &impls);
+        let mut props: Vec<PropOrSpread> = Vec::new();
+        for i in impls {
+            let ZtsImplDecl { methods, .. } = i;
+            for method in methods {
+                props.push(impl_method_prop(&n.ident, method));
+            }
+        }
+        let methods_obj = Expr::TsSatisfies(TsSatisfiesExpr {
+            span: n.span,
+            expr: Box::new(Expr::Object(ObjectLit {
+                span: n.span,
+                props,
+            })),
+            type_ann: satisfies_ty,
+        });
+        Expr::Call(CallExpr {
+            span: n.span,
+            ctxt: SyntaxContext::empty(),
+            callee: Callee::Expr(Box::new(Expr::Member(MemberExpr {
+                span: n.span,
+                obj: Box::new(Expr::Member(MemberExpr {
+                    span: n.span,
+                    obj: Box::new(Expr::Ident(Ident::new_no_ctxt(atom!("globalThis"), n.span))),
+                    prop: MemberProp::Ident(IdentName::new(atom!("Object"), n.span)),
+                })),
+                prop: MemberProp::Ident(IdentName::new(atom!("assign"), n.span)),
+            }))),
+            args: vec![
+                ExprOrSpread {
+                    spread: None,
+                    expr: Box::new(Expr::Arrow(arrow)),
+                },
+                ExprOrSpread {
+                    spread: None,
+                    expr: Box::new(methods_obj),
+                },
+            ],
+            type_args: None,
+        })
+    };
+
     let factory = Decl::Var(Box::new(VarDecl {
         span: n.span,
         ctxt: SyntaxContext::empty(),
@@ -446,7 +497,7 @@ fn lower_newtype(n: &ZtsNewtypeDecl) -> (Decl, Decl) {
         decls: vec![VarDeclarator {
             span: n.span,
             name: Pat::Ident(n.ident.clone().into()),
-            init: Some(Box::new(Expr::Arrow(arrow))),
+            init: Some(Box::new(init)),
             definite: false,
         }],
     }));
@@ -464,7 +515,7 @@ fn lower_newtype(n: &ZtsNewtypeDecl) -> (Decl, Decl) {
 ///         Level.values.indexOf(__ztsRaw as Level) !== -1,
 /// };
 /// ```
-fn lower_union(u: &ZtsUnionDecl) -> (Decl, Decl) {
+fn lower_union(u: &ZtsUnionDecl, impls: Vec<ZtsImplDecl>) -> (Decl, Decl) {
     let str_kw = || {
         Box::new(TsType::TsKeywordType(TsKeywordType {
             span: u.span,
@@ -602,6 +653,44 @@ fn lower_union(u: &ZtsUnionDecl) -> (Decl, Decl) {
         })),
     };
 
+    // Phase 7 item 5: a union factory is already an object — impls merge
+    // exactly like enums (methods appended, satisfies intersected).
+    // `values`/`has` name collisions are rejected by semantic with the
+    // original span.
+    let mut props = vec![
+        PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
+            key: PropName::Ident(IdentName::new(atom!("values"), u.span)),
+            value: Box::new(values_array),
+        }))),
+        PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
+            key: PropName::Ident(IdentName::new(atom!("has"), u.span)),
+            value: Box::new(Expr::Arrow(has_arrow)),
+        }))),
+    ];
+    let satisfies = if impls.is_empty() {
+        None
+    } else {
+        Some(impl_satisfies_type(&u.ident, &impls))
+    };
+    for i in impls {
+        let ZtsImplDecl { methods, .. } = i;
+        for method in methods {
+            props.push(impl_method_prop(&u.ident, method));
+        }
+    }
+    let factory_obj = Expr::Object(ObjectLit {
+        span: u.span,
+        props,
+    });
+    let init = match satisfies {
+        None => factory_obj,
+        Some(type_ann) => Expr::TsSatisfies(TsSatisfiesExpr {
+            span: u.span,
+            expr: Box::new(factory_obj),
+            type_ann,
+        }),
+    };
+
     let obj = Decl::Var(Box::new(VarDecl {
         span: u.span,
         ctxt: SyntaxContext::empty(),
@@ -610,19 +699,7 @@ fn lower_union(u: &ZtsUnionDecl) -> (Decl, Decl) {
         decls: vec![VarDeclarator {
             span: u.span,
             name: Pat::Ident(u.ident.clone().into()),
-            init: Some(Box::new(Expr::Object(ObjectLit {
-                span: u.span,
-                props: vec![
-                    PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
-                        key: PropName::Ident(IdentName::new(atom!("values"), u.span)),
-                        value: Box::new(values_array),
-                    }))),
-                    PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
-                        key: PropName::Ident(IdentName::new(atom!("has"), u.span)),
-                        value: Box::new(Expr::Arrow(has_arrow)),
-                    }))),
-                ],
-            }))),
+            init: Some(Box::new(init)),
             definite: false,
         }],
     }));
@@ -674,8 +751,14 @@ fn lower_zts_decl(decl: Decl, impls: &mut Vec<ZtsImplDecl>) -> Result<(Decl, Dec
             let mine = take_impls_for(impls, &e.ident);
             Ok(lower_enum(&e, mine))
         }
-        Decl::ZtsNewtype(n) => Ok(lower_newtype(&n)),
-        Decl::ZtsUnion(u) => Ok(lower_union(&u)),
+        Decl::ZtsNewtype(n) => {
+            let mine = take_impls_for(impls, &n.ident);
+            Ok(lower_newtype(&n, mine))
+        }
+        Decl::ZtsUnion(u) => {
+            let mine = take_impls_for(impls, &u.ident);
+            Ok(lower_union(&u, mine))
+        }
         other => Err(other),
     }
 }

@@ -1,0 +1,42 @@
+// Phase 7 item 5: impls for newtypes and unions.
+interface Display<Self> {
+  fmt(self: Self): string;
+}
+interface Parse<Self> {
+  parse(raw: string): Self;
+}
+
+newtype UserId = string;
+
+// Newtype factory is an arrow — methods attach via Object.assign; the
+// const stays callable AND carries the methods.
+impl Display, Parse for UserId {
+  fmt(self): string {
+    return `user:${self}`;
+  }
+  parse(raw: string): UserId {
+    return UserId(raw.trim());
+  }
+}
+
+union Level = "info" | "warn";
+
+impl Display for Level {
+  fmt(self): string {
+    return self.toUpperCase();
+  }
+}
+
+export const u: UserId = UserId("u1");
+export const viaParse: UserId = UserId.parse("  u2  ");
+export const label: string = UserId.fmt(u);
+
+declare const lvl: Level;
+export const lvlLabel: string = Level.fmt(lvl);
+export const still = Level.has("info");
+
+export function describe<T>(x: T, impl: Display<T>): string {
+  return impl.fmt(x);
+}
+export const d1: string = describe(u, UserId);
+export const d2: string = describe(lvl, Level);

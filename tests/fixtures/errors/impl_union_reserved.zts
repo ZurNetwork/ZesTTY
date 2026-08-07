@@ -1,0 +1,12 @@
+interface Bad<Self> {
+  has(raw: string): Self;
+}
+
+union Level = "info" | "warn";
+
+// `values`/`has` are the union factory's built-ins.
+impl Bad for Level {
+  has(raw: string): Level {
+    return "info";
+  }
+}

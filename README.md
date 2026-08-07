@@ -830,7 +830,17 @@ Language:
       `ZtsNot` AST node lowered in lower.rs (formatter round-trip —
       see the `not` section above; `const not = 1` / `not(x)` calls
       become errors).
-- [ ] 5. (stretch) impls for newtypes and unions.
+- [x] 5. **Impls for newtypes and unions** — SHIPPED. The orphan rule
+      widens to all three zts nominal types. Union factories merge like
+      enums (methods + satisfies; `values`/`has` name collisions are a
+      semantic error at the original span). Newtype factories are
+      ARROWS, so impls attach via
+      `globalThis.Object.assign(factory, { methods } satisfies ...)` —
+      Object.assign's return type is the intersection, keeping the
+      const callable AND carrying the methods; dictionary passing
+      (`describe(u, UserId)`) works unchanged. No syntax change — the
+      impl grammar was already target-agnostic (grammar/formatter
+      dispositions: none needed).
 
 `zts-fmt` (no formatter can parse zts; prettier-plugin route rejected —
 bidirectional TS↔zts nesting makes `embed` delegation impractical):
