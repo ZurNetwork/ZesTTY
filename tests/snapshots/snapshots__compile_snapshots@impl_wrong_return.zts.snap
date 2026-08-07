@@ -5,8 +5,8 @@ input_file: tests/fixtures/impl_wrong_return.zts
 ---
 import { __ztsAbsurd } from "@zestty/core";
 type Shape = {
-    kind: "Circle";
-    r: number;
+    readonly kind: "Circle";
+    readonly r: number;
 };
 const Shape = {
     Circle: (r: number): Shape =>({

@@ -5,8 +5,8 @@ input_file: tests/fixtures/impl_multi_trait.zts
 ---
 import { __ztsAbsurd } from "@zestty/core";
 type Box = {
-    kind: "Cube";
-    side: number;
+    readonly kind: "Cube";
+    readonly side: number;
 };
 const Box = {
     Cube: (side: number): Box =>({

@@ -5,12 +5,12 @@ input_file: tests/fixtures/impl_basic.zts
 ---
 import { __ztsAbsurd } from "@zestty/core";
 export type Shape = {
-    kind: "Circle";
-    r: number;
+    readonly kind: "Circle";
+    readonly r: number;
 } | {
-    kind: "Rect";
-    w: number;
-    h: number;
+    readonly kind: "Rect";
+    readonly w: number;
+    readonly h: number;
 };
 export const Shape = {
     Circle: (r: number): Shape =>({

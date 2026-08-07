@@ -5,11 +5,11 @@ input_file: tests/fixtures/exec_semantics.zts
 ---
 import { __ztsAbsurd } from "@zestty/core";
 type Shape = {
-    kind: "Circle";
-    radius: number;
+    readonly kind: "Circle";
+    readonly radius: number;
 } | {
-    kind: "Square";
-    side: number;
+    readonly kind: "Square";
+    readonly side: number;
 };
 const Shape = {
     Circle: (radius: number): Shape =>({
@@ -29,11 +29,11 @@ const Meters = (__ztsValue: number): Meters =>__ztsValue as Meters;
 // Phase 5: `?` try operator — Ok unwraps, Err propagates, bare form
 // discards the value but still propagates.
 type NumRes = {
-    kind: "Ok";
-    value: number;
+    readonly kind: "Ok";
+    readonly value: number;
 } | {
-    kind: "Err";
-    error: string;
+    readonly kind: "Err";
+    readonly error: string;
 };
 const NumRes = {
     Ok: (value: number): NumRes =>({

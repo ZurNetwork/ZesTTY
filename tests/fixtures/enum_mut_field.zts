@@ -1,0 +1,10 @@
+// Phase 7: payload fields are readonly by default; `mut` opts out.
+// This file mutates ONLY the mut field — it must pass tsc.
+enum Counter {
+  Cell { mut count: number, label: string },
+}
+
+const c = Counter.Cell(0, "clicks");
+c.count += 1;
+c.count = 10;
+export const n: number = c.count;

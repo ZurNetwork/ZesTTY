@@ -657,6 +657,28 @@ fn result_from_core_composes_with_match() {
 }
 
 #[test]
+fn mut_field_mutation_passes_tsc() {
+    // Phase 7: `mut` fields opt out of readonly — mutating one is fine.
+    let (ts_path, _) = compile_to("enum_mut_field.zts", "exit_mut_field.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected mutation of a mut field:\n{text}");
+}
+
+#[test]
+fn readonly_payload_mutation_fails_tsc() {
+    // THE 0.4.0 breaking change: non-mut payload writes and kind writes
+    // are TS2540, one per mutation site (that's the migration story).
+    let (ts_path, _) = compile_to("enum_readonly_mutation.zts", "exit_readonly.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(!ok, "tsc must reject readonly payload mutation");
+    assert_eq!(
+        text.matches("error TS2540").count(),
+        2,
+        "expected one TS2540 per mutation site (field + kind):\n{text}"
+    );
+}
+
+#[test]
 fn impl_output_passes_tsc() {
     // Phase 6 traits, whole loop: trait interface + enum + impl + direct
     // call + generic dictionary call, all verified by tsc.

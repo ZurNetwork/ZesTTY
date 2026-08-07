@@ -1,0 +1,21 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/enum_readonly_mutation.zts
+---
+// Phase 7 breaking change: writing a non-mut payload field (or kind,
+// ever) is a TS2540. Compiles in zts — tsc is the gate. Exit-tested.
+type Shape = {
+    readonly kind: "Circle";
+    readonly r: number;
+};
+const Shape = {
+    Circle: (r: number): Shape =>({
+            kind: "Circle",
+            r
+        })
+};
+const s = Shape.Circle(2);
+s.r = 99;
+s.kind = "Circle";
+export const out = s;
