@@ -873,6 +873,19 @@ impl VisitMut for Lower {
                     build_ternary(i)
                 };
             }
+            Expr::ZtsNot(..) => {
+                // `not expr` → `!expr` (0.4.0: `not` is a real node so
+                // formatters round-trip it; the compiler still erases it
+                // to plain negation here).
+                let Expr::ZtsNot(n) = e.take() else {
+                    unreachable!()
+                };
+                *e = Expr::Unary(UnaryExpr {
+                    span: n.span,
+                    op: op!("!"),
+                    arg: n.arg,
+                });
+            }
             _ => {}
         }
     }

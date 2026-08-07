@@ -142,6 +142,18 @@ impl Checker<'_> {
                 "identifiers starting with `__zts` are reserved for zts-generated code",
             );
         }
+        // `not` is a reserved word since 0.4.0 (Zuri, 2026-08-07): the
+        // parser owns expression positions; bindings are rejected here so
+        // every binding path (const/let/fn/class/params/imports) gets one
+        // consistent diagnostic. Property names stay legal, like ES
+        // reserved words.
+        if ident.sym == "not" {
+            self.err(
+                ident.span,
+                "`not` is a reserved word in zts (the negation operator, 0.4.0); rename this \
+                 binding",
+            );
+        }
     }
 
     fn guard_depth(&mut self, e: &Expr, descend: impl FnOnce(&mut Self)) {

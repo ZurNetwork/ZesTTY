@@ -13,13 +13,13 @@ enum Robot {
 }
 
 impl Human for Robot {
-  fn describe(self): string {
+  describe(self): string {
     return "friend";
   }
 }
 
 impl Machine for Robot {
-  fn describe(self): string {
+  describe(self): string {
     return "device";
   }
 }

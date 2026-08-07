@@ -12,7 +12,7 @@ enum Box {
 }
 
 impl Area for Box {
-  fn area(self): number {
+  area(self): number {
     return match (self) {
       Cube { side } => side * side,
     };
@@ -20,7 +20,7 @@ impl Area for Box {
 }
 
 impl Scaled for Box {
-  fn scaled(self, k: number): number {
+  scaled(self, k: number): number {
     return Box.area(self) * k;
   }
 }

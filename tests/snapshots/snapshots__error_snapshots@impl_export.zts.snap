@@ -8,7 +8,7 @@ error: `export impl` is not supported: the impl merges into the type's factory c
    |
 10 |   export impl Display for Shape {
    |  ________^
-11 | |   fn fmt(self): string {
+11 | |   fmt(self): string {
 12 | |     return "";
 13 | |   }
 14 | | }

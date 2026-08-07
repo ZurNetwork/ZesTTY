@@ -6,11 +6,9 @@ enum Shape {
   Circle { r: number },
 }
 
+// v1 (0.3.x) member syntax: dedicated migration diagnostic in 0.4.0.
 impl Display for Shape {
-  fmt(self): string {
-    return "a";
-  }
-  fmt(self): string {
-    return "b";
+  fn fmt(self): string {
+    return "";
   }
 }

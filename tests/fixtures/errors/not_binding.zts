@@ -1,0 +1,5 @@
+// `not` is a reserved word (0.4.0): binding it is a semantic error with
+// one consistent diagnostic across binding paths.
+const not = 1;
+let x = 2;
+class not2 {}

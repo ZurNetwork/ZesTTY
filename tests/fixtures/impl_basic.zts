@@ -10,7 +10,7 @@ export enum Shape {
 }
 
 impl Display for Shape {
-  fn fmt(self): string {
+  fmt(self): string {
     return match (self) {
       Circle { r } => `circle r=${r}`,
       Rect { w, h } => `rect ${w}x${h}`,

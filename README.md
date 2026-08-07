@@ -758,8 +758,8 @@ Language:
       "collisions left to tsc by design" disposition, re-decided with
       Zuri 2026-08-06). See "the permanent boundary" table in feature 8
       for everything deliberately NOT here.
-- [ ] 4b. **Syntax re-decisions, 2026-08-07 (both breaking, ride
-      0.4.0):** drop `fn` from impl blocks — members are bare TS-style
+- [x] 4b. **Syntax re-decisions, 2026-08-07 — SHIPPED (issue #60), both
+      breaking:** drop `fn` from impl blocks — members are bare TS-style
       methods (`fmt(self): string {}`; the word `fn` starting a member
       gets a migration diagnostic); reserve `not` and keep it as a
       `ZtsNot` AST node lowered in lower.rs (formatter round-trip —

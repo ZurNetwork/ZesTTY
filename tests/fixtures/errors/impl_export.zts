@@ -8,7 +8,7 @@ enum Shape {
 
 // `export impl` is meaningless: the factory const owns the export.
 export impl Display for Shape {
-  fn fmt(self): string {
+  fmt(self): string {
     return "";
   }
 }

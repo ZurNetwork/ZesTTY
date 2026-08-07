@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/impl_fn_legacy.zts
+---
+error: `fn` was removed in zts 0.4.0: impl members are TS-style methods — write `name(self, ...): Type { ... }` (drop the `fn`)
+  --> tests/fixtures/errors/impl_fn_legacy.zts:11:3
+   |
+11 |   fn fmt(self): string {
+   |   ^^
