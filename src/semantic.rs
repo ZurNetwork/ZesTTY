@@ -371,13 +371,24 @@ impl Checker<'_> {
 }
 
 impl Checker<'_> {
-    /// The trait rules that need the whole statement list (Phase 6):
+    /// The trait rules that need the whole statement list (Phase 6, and
+    /// the traits-v2 early checks of Phase 7):
     /// - orphan rule: `impl X for T` requires a zts enum `T` in the SAME
     ///   list (v1: enum impls only);
     /// - `export impl` is meaningless (the factory const owns the export);
     /// - every impl seen here is sanctioned — impls anywhere else are in a
-    ///   single-statement slot and get rejected by `visit_zts_impl_decl`.
-    fn check_zts_impls(&mut self, decls: &[(&Decl, bool)]) {
+    ///   single-statement slot and get rejected by `visit_zts_impl_decl`;
+    /// - (module level only, `module_items` is Some) each trait name must
+    ///   be declared or imported in the module — typos die at the header
+    ///   instead of as a remapped TS2304 on generated code;
+    /// - method-vs-variant collisions and CROSS-impl duplicate methods
+    ///   per target, named at the original spans (supersedes the v1
+    ///   "left to tsc" disposition — re-decided with Zuri 2026-08-06);
+    /// - same-file no-`extends` trait interfaces get a syntactic
+    ///   member-NAME comparison (missing/extra methods before tsc runs);
+    ///   imported traits still defer to the generated `satisfies` — we
+    ///   read local syntax, never types (the type-plane rule).
+    fn check_zts_impls(&mut self, decls: &[(&Decl, bool)], module_items: Option<&[ModuleItem]>) {
         let enums: HashSet<&swc_atoms::Atom> = decls
             .iter()
             .filter_map(|(d, _)| match d {
@@ -385,6 +396,88 @@ impl Checker<'_> {
                 _ => None,
             })
             .collect();
+
+        // Module-scope type-ish names + same-file plain interfaces.
+        let mut type_names: Option<HashSet<&swc_atoms::Atom>> = None;
+        let mut interfaces: std::collections::HashMap<&swc_atoms::Atom, &TsInterfaceDecl> =
+            std::collections::HashMap::new();
+        if let Some(items) = module_items {
+            let mut names: HashSet<&swc_atoms::Atom> = HashSet::new();
+            for item in items {
+                match item {
+                    ModuleItem::Stmt(Stmt::Decl(d))
+                    | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                        decl: d, ..
+                    })) => match d {
+                        Decl::TsInterface(iface) => {
+                            names.insert(&iface.id.sym);
+                            if iface.extends.is_empty() {
+                                interfaces.insert(&iface.id.sym, iface);
+                            }
+                        }
+                        Decl::TsTypeAlias(a) => {
+                            names.insert(&a.id.sym);
+                        }
+                        Decl::Class(c) => {
+                            names.insert(&c.ident.sym);
+                        }
+                        Decl::ZtsEnum(e) => {
+                            names.insert(&e.ident.sym);
+                        }
+                        Decl::ZtsNewtype(n) => {
+                            names.insert(&n.ident.sym);
+                        }
+                        Decl::ZtsUnion(u) => {
+                            names.insert(&u.ident.sym);
+                        }
+                        _ => {}
+                    },
+                    ModuleItem::ModuleDecl(ModuleDecl::Import(imp)) => {
+                        for s in &imp.specifiers {
+                            match s {
+                                ImportSpecifier::Named(n) => {
+                                    names.insert(&n.local.sym);
+                                }
+                                ImportSpecifier::Default(d) => {
+                                    names.insert(&d.local.sym);
+                                }
+                                ImportSpecifier::Namespace(ns) => {
+                                    names.insert(&ns.local.sym);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            type_names = Some(names);
+        }
+
+        // Variant names per enum target in this list.
+        let variants_of = |target: &swc_atoms::Atom| -> HashSet<&swc_atoms::Atom> {
+            decls
+                .iter()
+                .filter_map(|(d, _)| match d {
+                    Decl::ZtsEnum(e) if e.ident.sym == *target => Some(e),
+                    _ => None,
+                })
+                .flat_map(|e| e.variants.iter().map(|v| &v.name.sym))
+                .collect()
+        };
+
+        // Cross-impl method registry per target: name -> (trait label, span).
+        let mut seen_methods: std::collections::HashMap<
+            (&swc_atoms::Atom, &swc_atoms::Atom),
+            String,
+        > = std::collections::HashMap::new();
+        let trait_label = |i: &ZtsImplDecl| -> String {
+            i.traits
+                .iter()
+                .map(|t| t.ident.sym.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
         for (d, exported) in decls {
             let Decl::ZtsImpl(i) = d else { continue };
             self.sanctioned_impls
@@ -407,6 +500,111 @@ impl Checker<'_> {
                     ),
                 );
             }
+
+            // (a) trait name must exist in the module (module level only).
+            if let Some(names) = &type_names {
+                for tr in &i.traits {
+                    if !names.contains(&tr.ident.sym) {
+                        self.err(
+                            tr.ident.span,
+                            &format!(
+                                "unknown trait `{}`: declare or import it in this module",
+                                tr.ident.sym
+                            ),
+                        );
+                    }
+                }
+            }
+
+            // (c) same-file no-extends interfaces: member-NAME comparison.
+            let mut required: std::collections::HashMap<&swc_atoms::Atom, &swc_atoms::Atom> =
+                std::collections::HashMap::new();
+            let mut all_traits_local = !i.traits.is_empty();
+            for tr in &i.traits {
+                match interfaces.get(&tr.ident.sym) {
+                    Some(iface) => {
+                        for member in &iface.body.body {
+                            let key = match member {
+                                TsTypeElement::TsMethodSignature(m) => m.key.as_ident(),
+                                TsTypeElement::TsPropertySignature(p) => p.key.as_ident(),
+                                _ => None,
+                            };
+                            if let Some(k) = key {
+                                required.entry(&k.sym).or_insert(&tr.ident.sym);
+                            }
+                        }
+                    }
+                    None => all_traits_local = false,
+                }
+            }
+            let method_names: HashSet<&swc_atoms::Atom> =
+                i.methods.iter().map(|m| &m.name.sym).collect();
+            for (req, owner) in &required {
+                if !method_names.contains(*req) {
+                    self.err(
+                        i.span,
+                        &format!(
+                            "impl for `{}` is missing method `{req}` required by trait \
+                             `{owner}` (declared in this file)",
+                            i.for_ident.sym
+                        ),
+                    );
+                }
+            }
+            if all_traits_local {
+                for m in &i.methods {
+                    if !required.contains_key(&m.name.sym) {
+                        self.err(
+                            m.name.span,
+                            &format!(
+                                "`{}` is not a member of {} (traits declared in this file)",
+                                m.name.sym,
+                                trait_label(i)
+                            ),
+                        );
+                    }
+                }
+            }
+
+            // (b) variant collisions + cross-impl duplicates, original spans.
+            // Within-impl duplicates are visit_zts_impl_decl's diagnostic;
+            // skip repeats here so one mistake gets one error.
+            let mut in_this_impl: HashSet<&swc_atoms::Atom> = HashSet::new();
+            let variants = variants_of(&i.for_ident.sym);
+            let label = trait_label(i);
+            for m in &i.methods {
+                if !in_this_impl.insert(&m.name.sym) {
+                    continue;
+                }
+                if variants.contains(&m.name.sym) {
+                    self.err(
+                        m.name.span,
+                        &format!(
+                            "method `{}` collides with variant `{}` of enum `{}` (both become \
+                             factory members)",
+                            m.name.sym, m.name.sym, i.for_ident.sym
+                        ),
+                    );
+                }
+                match seen_methods.entry((&i.for_ident.sym, &m.name.sym)) {
+                    std::collections::hash_map::Entry::Occupied(prev) => {
+                        self.err(
+                            m.name.span,
+                            &format!(
+                                "`{}` is defined by both `{}` and `{}` for `{}` (one method \
+                                 name per type — the factory merge cannot hold two)",
+                                m.name.sym,
+                                prev.get(),
+                                label,
+                                i.for_ident.sym
+                            ),
+                        );
+                    }
+                    std::collections::hash_map::Entry::Vacant(slot) => {
+                        slot.insert(label.clone());
+                    }
+                }
+            }
         }
     }
 }
@@ -428,7 +626,7 @@ impl Visit for Checker<'_> {
             })
             .collect();
         self.check_zts_decl_names(decls.iter().map(|(d, _)| *d));
-        self.check_zts_impls(&decls);
+        self.check_zts_impls(&decls, Some(items));
         items.visit_children_with(self);
     }
 
@@ -441,7 +639,10 @@ impl Visit for Checker<'_> {
             })
             .collect();
         self.check_zts_decl_names(decls.iter().map(|(d, _)| *d));
-        self.check_zts_impls(&decls);
+        // Block scope: no module-item view, so the trait-name-exists and
+        // same-file-interface checks are skipped (imports/interfaces live
+        // at module level); orphan, collision, and duplicate checks run.
+        self.check_zts_impls(&decls, None);
         stmts.visit_children_with(self);
     }
 

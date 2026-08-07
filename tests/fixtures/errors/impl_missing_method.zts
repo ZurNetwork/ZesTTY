@@ -1,0 +1,16 @@
+interface Display<Self> {
+  fmt(self: Self): string;
+  describe(self: Self): string;
+}
+
+enum Shape {
+  Circle { r: number },
+}
+
+// Same-file no-extends trait: member-name comparison fires BEFORE tsc —
+// `describe` is missing.
+impl Display for Shape {
+  fmt(self): string {
+    return "";
+  }
+}

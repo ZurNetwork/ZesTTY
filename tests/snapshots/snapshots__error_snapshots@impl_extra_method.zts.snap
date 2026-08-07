@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/impl_extra_method.zts
+---
+error: `extra` is not a member of Display (traits declared in this file)
+  --> tests/fixtures/errors/impl_extra_method.zts:15:3
+   |
+15 |   extra(self): number {
+   |   ^^^^^

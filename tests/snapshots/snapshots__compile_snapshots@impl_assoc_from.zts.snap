@@ -1,0 +1,36 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/impl_assoc_from.zts
+---
+type Status = {
+    readonly kind: "Active";
+    readonly since: number;
+} | {
+    readonly kind: "Inactive";
+};
+const Status = {
+    Active: (since: number): Status =>({
+            kind: "Active",
+            since
+        }),
+    Inactive: (): Status =>({
+            kind: "Inactive"
+        }),
+    from (value: string): Status {
+        return value === "active" ? Status.Active(0) : Status.Inactive();
+    }
+} satisfies {
+    [key: string]: unknown;
+} & From<Status, string>;
+// Traits v2: associated function (no self) + trait type-args. The
+// dictionary story is unchanged — the factory namespace satisfies the
+// instantiated trait.
+interface From<Self, T> {
+    from(value: T): Self;
+}
+export const s: Status = Status.from("active");
+export function convert<S, T>(raw: T, impl: From<S, T>): S {
+    return impl.from(raw);
+}
+export const t: Status = convert("inactive", Status);

@@ -1,0 +1,16 @@
+// Traits v2 conformance: the body accepts number where the header
+// claims From<string> — tsc rejects the satisfies obligation.
+// Compiles in zts (member NAMES match; types are tsc's job).
+interface From<Self, T> {
+  from(value: T): Self;
+}
+
+enum Status {
+  Active {},
+}
+
+impl From<string> for Status {
+  from(value: number): Status {
+    return Status.Active();
+  }
+}

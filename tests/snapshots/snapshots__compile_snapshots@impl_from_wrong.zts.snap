@@ -1,0 +1,24 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/impl_from_wrong.zts
+---
+type Status = {
+    readonly kind: "Active";
+};
+const Status = {
+    Active: (): Status =>({
+            kind: "Active"
+        }),
+    from (value: number): Status {
+        return Status.Active();
+    }
+} satisfies {
+    [key: string]: unknown;
+} & From<Status, string>;
+// Traits v2 conformance: the body accepts number where the header
+// claims From<string> — tsc rejects the satisfies obligation.
+// Compiles in zts (member NAMES match; types are tsc's job).
+interface From<Self, T> {
+    from(value: T): Self;
+}

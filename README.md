@@ -392,6 +392,38 @@ because the factory structurally satisfies `Display<Shape>`; there is
 **no call-site lowering at all**. Vanilla `.ts` consumers inherit the
 whole system as objects + interfaces.
 
+**Traits v2 (Phase 7 — SHIPPED):**
+
+```ts
+impl From<string>, From<number> for Id {
+  from(value: string | number): Id {           // no self: associated fn
+    return typeof value === "string" ? Id.Str(value) : Id.Num(value);
+  }
+}
+// → Id.from("x") / Id.from(4), and
+//   satisfies { ... } & From<Id, string> & From<Id, number>
+```
+
+- **Associated functions**: `self` is optional — without it the method
+  merges as `Id.from(...)` with fully user-annotated params. Bare first
+  `self` still marks a receiver method (annotated in the lowering);
+  ANNOTATED self and non-first self stay errors.
+- **Trait type-args**: `impl From<string>` → Self is the FIRST type
+  argument, header args appended after: `satisfies From<Id, string>`.
+- **Comma-header multi-instantiation**: each listed trait is a separate
+  satisfies obligation over ONE union-typed body (TS overload semantics
+  via intersection — the signature-level guarantee; the body's own
+  dispatch is the author's, deliberately NOT `From<string | number>`
+  which is a weaker single claim).
+- **Early semantic checks (original spans, before tsc)**: unknown trait
+  name at the header (declared/imported in-module, module level);
+  method-vs-variant collisions; CROSS-impl duplicate methods ("`x` is
+  defined by both `Human` and `Machine`") — superseding the v1 "left to
+  tsc" coherence disposition; same-file no-`extends` interfaces get a
+  syntactic member-NAME comparison (missing/extra methods) — imported
+  traits still defer to `satisfies`, names from syntax only, never
+  types.
+
 Load-bearing details:
 
 - **`fn` DROPPED (Zuri, 2026-08-07 — lands in 0.4.0, breaking):** impl
@@ -740,7 +772,7 @@ Language:
       recorded). Read-shape contract (`.pop()` does not un-narrow),
       like all TS tuples. Suffix composes: `string[+][]`,
       `readonly T[+]`.
-- [ ] 4. **Traits v2** — associated functions (methods without `self` →
+- [x] 4. **Traits v2** — SHIPPED, see feature 8. Associated functions (methods without `self` →
       merge as `Status.from(...)`; params are user-annotated so the
       receiver-typing step is skipped); trait type-arguments in the
       header (`impl From<string> for Status` →

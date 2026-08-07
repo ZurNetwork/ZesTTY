@@ -94,14 +94,20 @@
       ]
     },
     "zts-impl-declaration": {
-      "comment": "`impl Trait for Type {` — contextual, same-line-identifier commit rule as `union`/`newtype` (mirrors parser/zts.rs parse_ts_decl's \"impl\" arm); members are bare TS-style methods since 0.4.0 (`fn` removed — issue #60); bare `self` gets a language-variable scope inside this block only",
-      "begin": "(?<![.$])\\b(impl)\\b\\s+([A-Za-z_$][\\w$]*)\\s+\\b(for)\\b\\s+([A-Za-z_$][\\w$]*)\\s*(\\{)",
+      "comment": "`impl Trait for Type {` and traits v2 `impl From<string>, From<number> for Status {` — contextual, same-line-identifier commit rule as `union`/`newtype`; members are bare TS-style methods since 0.4.0 (`fn` removed — issue #60); bare `self` gets a language-variable scope inside this block only. The trait-list capture is colored by sub-patterns (idents as trait types, type-args via embedded TS).",
+      "begin": "(?<![.$])\\b(impl)\\b\\s+([A-Za-z_$][\\w$]*(?:\\s*<[^>{;]*>)?(?:\\s*,\\s*[A-Za-z_$][\\w$]*(?:\\s*<[^>{;]*>)?)*)\\s+\\b(for)\\b\\s+([A-Za-z_$][\\w$]*)\\s*(\\{)",
       "beginCaptures": {
         "1": {
           "name": "keyword.control.impl.zts"
         },
         "2": {
-          "name": "entity.name.type.trait.zts"
+          "patterns": [
+            {
+              "comment": "trait names: identifiers at list positions (before `<`, `,`, or capture end); type-arg contents stay plain",
+              "match": "\\b[A-Za-z_$][\\w$]*\\b(?=\\s*(?:<|,|$))",
+              "name": "entity.name.type.trait.zts"
+            }
+          ]
         },
         "3": {
           "name": "keyword.control.for.zts"

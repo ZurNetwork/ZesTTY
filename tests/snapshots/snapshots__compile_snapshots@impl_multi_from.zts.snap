@@ -1,0 +1,40 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/impl_multi_from.zts
+---
+type Id = {
+    readonly kind: "Str";
+    readonly s: string;
+} | {
+    readonly kind: "Num";
+    readonly n: number;
+};
+const Id = {
+    Str: (s: string): Id =>({
+            kind: "Str",
+            s
+        }),
+    Num: (n: number): Id =>({
+            kind: "Num",
+            n
+        }),
+    from (value: string | number): Id {
+        return typeof value === "string" ? Id.Str(value) : Id.Num(value);
+    }
+} satisfies {
+    [key: string]: unknown;
+} & From<Id, string> & From<Id, number>;
+// Traits v2: comma-header multi-instantiation — ONE union-typed body,
+// each listed trait a separate satisfies obligation (TS overload
+// semantics via intersection).
+interface From<Self, T> {
+    from(value: T): Self;
+}
+export const a: Id = Id.from("abc");
+export const b: Id = Id.from(42);
+export function convert<S, T>(raw: T, impl: From<S, T>): S {
+    return impl.from(raw);
+}
+export const c: Id = convert("x", Id);
+export const d: Id = convert(7, Id);
