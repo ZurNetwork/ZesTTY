@@ -399,6 +399,27 @@ Load-bearing details:
 - Within-impl duplicate methods and `__zts`-prefixed method names are
   semantic errors (better spans than the tsc equivalents).
 
+#### Traits: the permanent boundary (recorded 2026-08-06 — do not re-litigate)
+
+Traits are the one adopted feature whose Rust home is inside the type
+checker, so every extension request meets the same wall: **if resolving a
+call requires reading a type, it is out — permanently.** The type plane
+is write-only (Conventions). This table is the lookup answer to every
+future "can traits do X":
+
+| Inside (syntactic — shipped or Phase 7)                                                            | Outside (type-directed — never)                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| impl blocks, factory merge, auto-`satisfies`                                                       | `x.fmt()` method-call syntax                                                                                                                                                                         |
+| receiver methods; associated functions (no `self`)                                                 | merging separate impl bodies under one name (needs call-site types or runtime type tests that erased types don't have — and we cannot even _detect_ the safe primitive subset without reading types) |
+| trait type-args (`impl From<string> for Status`)                                                   | blanket impls (`impl<T: Display> Show for T`)                                                                                                                                                        |
+| comma-header multi-instantiation (one union-typed body, `satisfies A & B` — TS overload semantics) | specialization                                                                                                                                                                                       |
+| dictionary passing (`describe(s, Shape)`)                                                          | implicit dictionary selection                                                                                                                                                                        |
+| orphan rule, coherence, early semantic checks                                                      | —                                                                                                                                                                                                    |
+
+Where Rust spends a type checker, zts spends a method name (e.g.
+`from_string`/`from_number` instead of two merged `From` impls). That is
+the trade the whole language is built on.
+
 ### Deliberately deferred (do not implement yet)
 
 `Option<T>`, `let`/`let mut`, no-untracked-throws, move checking.
@@ -648,6 +669,81 @@ snapshots happy + error, tsc exit test per safety property, review gate).
       diagnostics can't invent a missing-module error. Scripts
       (non-modules) always inline — they cannot import. Pinned by an
       inline-mode snapshot + a self-contained tsc exit test.
+
+### Phase 7 — 0.4.0, "the type-plane minor" (Zuri-approved, 2026-08-06)
+
+Each language item repeats the Phase 1 loop (fork parser tests,
+snapshots happy + error, tsc exit test per safety property, review
+gate). Pre-1.0 semver: the 0.x minor slot carries breaking changes —
+item 1 is THE headline break of this release, loudly documented.
+
+Language:
+
+- [ ] 1. **Readonly enum payloads + `mut` opt-out** — BREAKING. Variant
+      fields emit `readonly` in the generated tagged union; `mut field:
+    T` opts out per field; `kind` is always readonly with no opt-out.
+      Migration is mechanical: every break is a TS2540 at the exact
+      mutation site, fix = add `mut`. Lives on zts-owned constructs
+      only, so the superset promise is untouched (unlike the rejected
+      `let`/`let mut`). Honest limits (recorded): TS `readonly` is
+      shallow, and readonly is not part of structural assignability —
+      the guarantee fires on direct writes through the typed view.
+- [ ] 2. **`static_assert(A == B);`** — erased type-level assertion;
+      operators `==` (mutual, Equal-trick), `!=`, `extends`. Lowers to
+      a type alias whose constraint fails when the claim is false
+      (TS2344 remapped to the assert line). `Equal`/`Expect` helper
+      types ship as type-only exports from @zestty/core. Contextual
+      keyword, same commit rule as `union`.
+- [ ] 3. **Non-empty array sugar `T[+]`** — lowers to `[T, ...T[]]`.
+      Callers must prove non-emptiness; `xs[0]` is `T`. Limits
+      (recorded): a runtime `.length` check does not narrow (ship an
+      `isNonEmpty` guard in @zestty/core, level 2); read-shape contract
+      (`.pop()` does not un-narrow), like all TS tuples.
+- [ ] 4. **Traits v2** — associated functions (`fn` without `self` →
+      merges as `Status.from(...)`; params are user-annotated so the
+      receiver-typing step is skipped); trait type-arguments in the
+      header (`impl From<string> for Status` → `satisfies
+    From<Status, string>`, Self first then header args in order);
+      comma-header multi-instantiation (`impl From<string>,
+    From<number> for Status` with ONE union-typed body — each listed
+      trait is a separate satisfies obligation; deliberately NOT
+      `From<string | number>`, a weaker single claim); early semantic
+      checks with original spans (trait ident must be declared/imported
+      in-module; method-vs-variant and cross-impl collisions named
+      "`x` is defined by both A and B"; same-file no-extends trait
+      interfaces get syntactic member-name comparison — imported traits
+      still defer to `satisfies`; NOTE this supersedes the v1
+      "collisions left to tsc by design" disposition, re-decided with
+      Zuri 2026-08-06). See "the permanent boundary" table in feature 8
+      for everything deliberately NOT here.
+- [ ] 5. (stretch) impls for newtypes and unions.
+
+`zts-fmt` (no formatter can parse zts; prettier-plugin route rejected —
+bidirectional TS↔zts nesting makes `embed` delegation impractical):
+
+- [ ] 6. **Feasibility spike (the risk gate)**: fork
+      dprint-plugin-typescript (Rust, prettier-style output, built on
+      swc's AST), repoint its swc deps at `../swc_rustify@zts`
+      path-deps, confirm the version pin aligns and a zts-flag parse
+      flows through its pipeline. A day to learn what a month would
+      otherwise cost.
+- [ ] 7. Print rules for the zts nodes (match, enums-with-data,
+      expression-if chains, newtype, union, impl/fn, not, postfix `?`)
+      — donor-node discipline, mirroring existing dprint patterns.
+- [ ] 8. Idempotence (`fmt(fmt(x)) == fmt(x)`) + snapshot suite over
+      the existing fixtures; comment preservation.
+- [ ] 9. Ship `zts-fmt` (Rust binary + napi export), served through
+      @zestty/language-server `textDocument/formatting` so VS Code and
+      nvim get format-on-save with zero new editor wiring; defaults
+      tuned to this repo's prettier style.
+- [ ] 10. `zts-fmt --check` over fixtures joins the CI format job; docs.
+
+- [ ] 11. Release 0.4.0.
+
+Open inputs from Zuri before the affected items start: keep or drop
+`fn` in impl blocks (affects items 4 and 7 and the grammar); which
+editor exhibits the impl-block indent reset (nvim tree-sitter indent
+vs vscode onEnter rules) — fix rides this phase.
 
 ### Phase 3 — DX
 
