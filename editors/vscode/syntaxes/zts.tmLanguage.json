@@ -10,6 +10,18 @@
       "include": "#zts-enum-declaration"
     },
     {
+      "include": "#zts-impl-declaration"
+    },
+    {
+      "include": "#zts-union-declaration"
+    },
+    {
+      "include": "#zts-newtype-declaration"
+    },
+    {
+      "include": "#zts-not-operator"
+    },
+    {
       "include": "source.ts"
     }
   ],
@@ -80,6 +92,84 @@
           "include": "source.ts"
         }
       ]
+    },
+    "zts-impl-declaration": {
+      "comment": "`impl Trait for Type {` — contextual, same-line-identifier commit rule as `union`/`newtype` (mirrors parser/zts.rs parse_ts_decl's \"impl\" arm); `fn` and bare `self` are keywords/language-variable ONLY inside this block (fn is not a keyword anywhere else in zts)",
+      "begin": "(?<![.$])\\b(impl)\\b\\s+([A-Za-z_$][\\w$]*)\\s+\\b(for)\\b\\s+([A-Za-z_$][\\w$]*)\\s*(\\{)",
+      "beginCaptures": {
+        "1": {
+          "name": "keyword.control.impl.zts"
+        },
+        "2": {
+          "name": "entity.name.type.trait.zts"
+        },
+        "3": {
+          "name": "keyword.control.for.zts"
+        },
+        "4": {
+          "name": "entity.name.type.zts"
+        },
+        "5": {
+          "name": "punctuation.definition.block.zts"
+        }
+      },
+      "end": "\\}",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.block.zts"
+        }
+      },
+      "patterns": [
+        {
+          "comment": "`fn` method keyword — contextual to the impl block",
+          "match": "(?<![.$])\\b(fn)\\b",
+          "name": "keyword.control.fn.zts"
+        },
+        {
+          "comment": "bare `self` receiver (no type annotation allowed in source)",
+          "match": "\\b(self)\\b(?=\\s*[,)])",
+          "name": "variable.language.self.zts"
+        },
+        {
+          "include": "#zts-balanced-braces"
+        },
+        {
+          "include": "source.ts"
+        }
+      ]
+    },
+    "zts-union-declaration": {
+      "comment": "`union Name = 'a' | 'b';` — contextual, same-line identifier + `=` commits (mirrors the `type`-alias rule; `const union = 2;` stays vanilla)",
+      "match": "(?<![.$])\\b(union)\\b\\s+([A-Za-z_$][\\w$]*)\\b(?=\\s*=)",
+      "captures": {
+        "1": {
+          "name": "storage.type.union.zts"
+        },
+        "2": {
+          "name": "entity.name.type.zts"
+        }
+      }
+    },
+    "zts-newtype-declaration": {
+      "comment": "`newtype Id = string;` — contextual, same-line identifier + `=` commits (mirrors the `type`-alias rule; `const newtype = 2;` stays vanilla)",
+      "match": "(?<![.$])\\b(newtype)\\b\\s+([A-Za-z_$][\\w$]*)\\b(?=\\s*=)",
+      "captures": {
+        "1": {
+          "name": "storage.type.newtype.zts"
+        },
+        "2": {
+          "name": "entity.name.type.zts"
+        }
+      }
+    },
+    "zts-not-operator": {
+      "comment": "`not` prefix sugar for `!` — contextual: only when a word/literal starts on the same line right after (`not ready`); `not(x)` calls, `not.foo`, `not => x` stay vanilla. Regex approximation of the parser's one-token lookahead — cannot special-case operator-keyword operands like `not instanceof F` (rare, left uncolored-as-negation like a call would be, i.e. best-effort).",
+      "match": "(?<![.$])\\b(not)\\b(?=[ \\t]+[A-Za-z_$0-9'\"`])",
+      "captures": {
+        "1": {
+          "name": "keyword.operator.not.zts"
+        }
+      }
     },
     "zts-balanced-braces": {
       "begin": "\\{",
