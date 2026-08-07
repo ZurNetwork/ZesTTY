@@ -1,0 +1,18 @@
+interface Display<Self> {
+  fmt(self: Self): string;
+}
+
+enum Shape {
+  Circle { r: number },
+}
+
+// All listed traits are same-file: an impl method outside their members
+// is flagged at ITS span.
+impl Display for Shape {
+  fmt(self): string {
+    return "";
+  }
+  extra(self): number {
+    return 1;
+  }
+}

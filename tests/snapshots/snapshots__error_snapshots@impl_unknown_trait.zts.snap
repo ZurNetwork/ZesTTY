@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/impl_unknown_trait.zts
+---
+error: unknown trait `Dsiplay`: declare or import it in this module
+ --> tests/fixtures/errors/impl_unknown_trait.zts:7:6
+  |
+7 | impl Dsiplay for Shape {
+  |      ^^^^^^^

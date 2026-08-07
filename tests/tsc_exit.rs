@@ -738,20 +738,34 @@ fn impl_wrong_return_fails_satisfies() {
 }
 
 #[test]
-fn impl_coherence_duplicate_method_fails_tsc() {
-    // Coherence safety property: two impls colliding on a method name
-    // become duplicate object keys — rejected by tsc (TS1117), never
-    // checked on the zts side.
-    let (ts_path, _) = compile_to("impl_coherence.zts", "exit_impl_coherence.ts");
+fn impl_assoc_and_multi_from_pass_tsc() {
+    // Traits v2: associated functions with type-args, and the
+    // comma-header multi-instantiation with one union body, both
+    // verified end-to-end (calls + dictionary passing included).
+    let (ts_path, _) = compile_to("impl_assoc_from.zts", "exit_impl_assoc.ts");
     let (ok, text) = tsc(&ts_path);
-    assert!(!ok, "tsc must reject colliding impl methods");
-    // Object METHODS collide as TS2300 (duplicate identifier), one error
-    // per colliding method span.
+    assert!(ok, "tsc rejected associated-function impl output:\n{text}");
+    let (ts_path, _) = compile_to("impl_multi_from.zts", "exit_impl_multi_from.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected comma-header impl output:\n{text}");
+}
+
+#[test]
+fn impl_from_wrong_arg_type_fails_satisfies() {
+    // Traits v2 conformance: names match (semantic passes), the body's
+    // param type contradicts the header's instantiation — tsc rejects
+    // the satisfies obligation.
+    let (ts_path, _) = compile_to("impl_from_wrong.zts", "exit_impl_from_wrong.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(!ok, "tsc must reject a From<string> impl taking number");
     assert!(
-        text.contains("TS2300") && text.contains("Duplicate identifier"),
-        "expected the duplicate-identifier error:\n{text}"
+        text.contains("error TS"),
+        "expected a satisfies failure:\n{text}"
     );
 }
+// NOTE: cross-impl method collisions moved from a tsc exit test to the
+// SEMANTIC pass (traits v2 early checks — errors/impl_cross_dup.zts),
+// superseding the "left to tsc" disposition, re-decided with Zuri.
 
 #[test]
 fn missing_arm_fails_tsc_and_maps_to_match() {

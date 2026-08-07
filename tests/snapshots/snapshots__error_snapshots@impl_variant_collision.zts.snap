@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/impl_variant_collision.zts
+---
+error: method `Circle` collides with variant `Circle` of enum `Shape` (both become factory members)
+  --> tests/fixtures/errors/impl_variant_collision.zts:12:3
+   |
+12 |   Circle(): Shape {
+   |   ^^^^^^

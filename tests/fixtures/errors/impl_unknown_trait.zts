@@ -1,0 +1,11 @@
+enum Shape {
+  Circle { r: number },
+}
+
+// Typo'd trait name: dies at the header with an original span, not as a
+// remapped TS2304 on generated code.
+impl Dsiplay for Shape {
+  fmt(self): string {
+    return "";
+  }
+}

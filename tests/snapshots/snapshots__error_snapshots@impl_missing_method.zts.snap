@@ -1,0 +1,14 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/impl_missing_method.zts
+---
+error: impl for `Shape` is missing method `describe` required by trait `Display` (declared in this file)
+  --> tests/fixtures/errors/impl_missing_method.zts:12:1
+   |
+12 | / impl Display for Shape {
+13 | |   fmt(self): string {
+14 | |     return "";
+15 | |   }
+16 | | }
+   | |_^

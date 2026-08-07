@@ -1,0 +1,15 @@
+interface Maker<Self> {
+  Circle(): Self;
+}
+
+enum Shape {
+  Circle { r: number },
+}
+
+// A method named after a variant: both become factory members — caught
+// with the original span instead of a generated-code TS2300.
+impl Maker for Shape {
+  Circle(): Shape {
+    return Shape.Circle(1);
+  }
+}

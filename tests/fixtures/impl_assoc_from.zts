@@ -1,0 +1,24 @@
+// Traits v2: associated function (no self) + trait type-args. The
+// dictionary story is unchanged — the factory namespace satisfies the
+// instantiated trait.
+interface From<Self, T> {
+  from(value: T): Self;
+}
+
+enum Status {
+  Active { since: number },
+  Inactive {},
+}
+
+impl From<string> for Status {
+  from(value: string): Status {
+    return value === "active" ? Status.Active(0) : Status.Inactive();
+  }
+}
+
+export const s: Status = Status.from("active");
+
+export function convert<S, T>(raw: T, impl: From<S, T>): S {
+  return impl.from(raw);
+}
+export const t: Status = convert("inactive", Status);

@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/impl_cross_dup.zts
+---
+error: `describe` is defined by both `Human` and `Machine` for `Robot` (one method name per type — the factory merge cannot hold two)
+  --> tests/fixtures/errors/impl_cross_dup.zts:22:3
+   |
+22 |   describe(self): string {
+   |   ^^^^^^^^

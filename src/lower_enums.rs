@@ -174,10 +174,15 @@ fn variant_factory(enum_ident: &Ident, variant: &ZtsEnumVariant) -> PropOrSpread
 /// type HERE — the parser guarantees it carried none — so method bodies
 /// see a fully typed value while the source stays annotation-free.
 fn impl_method_prop(enum_ident: &Ident, mut method: ZtsImplMethod) -> PropOrSpread {
+    // Traits v2: `self` is optional. A leading BARE `self` marks a
+    // receiver method and gets the enum type here; an associated
+    // function (no self) has fully user-annotated params — nothing to do.
     if let Some(Param {
         pat: Pat::Ident(self_pat),
         ..
     }) = method.function.params.first_mut()
+        && self_pat.id.sym == "self"
+        && self_pat.type_ann.is_none()
     {
         self_pat.type_ann = Some(Box::new(TsTypeAnn {
             span: self_pat.id.span,
@@ -237,19 +242,31 @@ fn impl_satisfies_type(enum_ident: &Ident, impls: &[ZtsImplDecl]) -> Box<TsType>
 
     let mut types: Vec<Box<TsType>> = Vec::with_capacity(impls.len() + 1);
     types.push(absorber);
+    // Traits v2: each trait ref in each impl header is its OWN satisfies
+    // obligation. Self is the FIRST type argument; the header's explicit
+    // type args (`impl From<string>`) are appended after it in order —
+    // `satisfies From<Status, string>`.
     for i in impls {
-        types.push(Box::new(TsType::TsTypeRef(TsTypeRef {
-            span: i.trait_ident.span,
-            type_name: TsEntityName::Ident(i.trait_ident.clone()),
-            type_params: Some(Box::new(TsTypeParamInstantiation {
+        for tr in &i.traits {
+            let mut params: Vec<Box<TsType>> =
+                Vec::with_capacity(1 + tr.type_args.as_ref().map_or(0, |a| a.params.len()));
+            params.push(Box::new(TsType::TsTypeRef(TsTypeRef {
                 span: i.for_ident.span,
-                params: vec![Box::new(TsType::TsTypeRef(TsTypeRef {
-                    span: i.for_ident.span,
-                    type_name: TsEntityName::Ident(enum_ident.clone()),
-                    type_params: None,
-                }))],
-            })),
-        })));
+                type_name: TsEntityName::Ident(enum_ident.clone()),
+                type_params: None,
+            })));
+            if let Some(args) = &tr.type_args {
+                params.extend(args.params.iter().cloned());
+            }
+            types.push(Box::new(TsType::TsTypeRef(TsTypeRef {
+                span: tr.span,
+                type_name: TsEntityName::Ident(tr.ident.clone()),
+                type_params: Some(Box::new(TsTypeParamInstantiation {
+                    span: tr.span,
+                    params,
+                })),
+            })));
+        }
     }
 
     Box::new(TsType::TsUnionOrIntersectionType(
