@@ -680,8 +680,9 @@ item 1 is THE headline break of this release, loudly documented.
 Language:
 
 - [ ] 1. **Readonly enum payloads + `mut` opt-out** — BREAKING. Variant
-      fields emit `readonly` in the generated tagged union; `mut field:
-    T` opts out per field; `kind` is always readonly with no opt-out.
+      fields emit `readonly` in the generated tagged union;
+      `mut field: T` opts out per field; `kind` is always readonly with
+      no opt-out.
       Migration is mechanical: every break is a TS2540 at the exact
       mutation site, fix = add `mut`. Lives on zts-owned constructs
       only, so the superset promise is untouched (unlike the rejected
@@ -702,11 +703,12 @@ Language:
 - [ ] 4. **Traits v2** — associated functions (`fn` without `self` →
       merges as `Status.from(...)`; params are user-annotated so the
       receiver-typing step is skipped); trait type-arguments in the
-      header (`impl From<string> for Status` → `satisfies
-    From<Status, string>`, Self first then header args in order);
-      comma-header multi-instantiation (`impl From<string>,
-    From<number> for Status` with ONE union-typed body — each listed
-      trait is a separate satisfies obligation; deliberately NOT
+      header (`impl From<string> for Status` →
+      `satisfies From<Status, string>`, Self first then header args in
+      order); comma-header multi-instantiation
+      (`impl From<string>, From<number> for Status` with ONE
+      union-typed body — each listed trait is a separate satisfies
+      obligation; deliberately NOT
       `From<string | number>`, a weaker single claim); early semantic
       checks with original spans (trait ident must be declared/imported
       in-module; method-vs-variant and cross-impl collisions named
