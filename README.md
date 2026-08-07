@@ -374,7 +374,7 @@ enum Shape {
   Circle { r: number },
 }
 impl Display for Shape {
-  fn fmt(self): string {
+  fmt(self): string {
     return match (self) { Circle { r } => `circle r=${r}` };
   }
 }
@@ -394,10 +394,15 @@ whole system as objects + interfaces.
 
 Load-bearing details:
 
-- Return types are TS-style `:` (no `->` token exists; TS-flavored
-  direction prefers it). The bare `self` receiver is required first and
-  gets its type annotation in the LOWERING (annotating it in source is an
-  error).
+- **`fn` DROPPED (Zuri, 2026-08-07 — lands in 0.4.0, breaking):** impl
+  members are bare TS-style methods, `fmt(self): string { ... }` —
+  exactly class/object-method syntax. An impl block only contains
+  methods, so `fn` was never structurally necessary; v1 (0.3.1) shipped
+  with it, 0.4.0 removes it (a member starting with the word `fn` gets
+  a dedicated migration diagnostic). Return types are TS-style `:` (no
+  `->` token exists). The bare `self` receiver is required first and
+  gets its type annotation in the LOWERING (annotating it in source is
+  an error).
 - The `{ [key: string]: unknown }` intersection member absorbs the
   variant factories from `satisfies`' excess-property check. Written
   inline, never `Record` — a user shadow of `Record` would silently
@@ -449,6 +454,17 @@ speculation: negation only when the operand token can never legally
 follow an identifier (a word or literal, on the same line). Everything
 else keeps vanilla meaning: `not(x)` calls, `not.foo`, `not => x`,
 `not instanceof F`, and ASI (`not⏎x` is two statements).
+
+**RE-DECIDED (Zuri, 2026-08-07 — lands in 0.4.0, breaking): `not` is a
+RESERVED WORD.** The contextual rule above is retired: `not` can no
+longer be a user identifier (`const not = 1`, `not(x)` as a call,
+`not.foo` become errors). Two reasons: (a) the formatter cannot
+round-trip `not` today — the parser desugars it to `!` at parse time
+with no AST marker, so zts-fmt would silently rewrite `not ready` to
+`!ready`; reserving the word lets the parser keep a real `ZtsNot` node
+(appended Expr variant) that the compiler lowers to `!` in lower.rs
+like every other zts construct and the formatter prints verbatim;
+(b) it removes the ambiguity carve-outs entirely.
 
 Considered and REJECTED (Zuri, 2026-08-05): paren-less `if` conditions.
 Statement `if` must stay vanilla TS (superset promise), and the `) {`
@@ -703,19 +719,24 @@ Language:
       `let`/`let mut`). Honest limits (recorded): TS `readonly` is
       shallow, and readonly is not part of structural assignability —
       the guarantee fires on direct writes through the typed view.
-- [ ] 2. **`static_assert(A == B);`** — erased type-level assertion;
-      operators `==` (mutual, Equal-trick), `!=`, `extends`. Lowers to
-      a type alias whose constraint fails when the claim is false
-      (TS2344 remapped to the assert line). `Equal`/`Expect` helper
-      types ship as type-only exports from @zestty/core. Contextual
-      keyword, same commit rule as `union`.
+- [ ] 2. **`constrict A == B;`** (renamed from `static_assert`,
+      parens DROPPED — both re-decided with Zuri 2026-08-07: the paren
+      form `static_assert(a == b)` is already legal TS — a call with a
+      comparison — so it would steal meaning from valid programs, and
+      no speculation rule can distinguish the two since both parse.
+      Paren-free commits on the same-line-ident rule like `union`, and
+      two identifiers in a row is never valid TS). Erased type-level
+      assertion; operators `==` (mutual, Equal-trick), `!=`, `extends`.
+      Lowers to a type alias whose constraint fails when the claim is
+      false (TS2344 remapped to the assert line). `Equal`/`Expect`
+      helper types ship as type-only exports from @zestty/core.
 - [ ] 3. **Non-empty array sugar `T[+]`** — lowers to `[T, ...T[]]`.
       Callers must prove non-emptiness; `xs[0]` is `T`. Limits
       (recorded): a runtime `.length` check does not narrow (ship an
       `isNonEmpty` guard in @zestty/core, level 2); read-shape contract
       (`.pop()` does not un-narrow), like all TS tuples.
-- [ ] 4. **Traits v2** — associated functions (`fn` without `self` →
-      merges as `Status.from(...)`; params are user-annotated so the
+- [ ] 4. **Traits v2** — associated functions (methods without `self` →
+      merge as `Status.from(...)`; params are user-annotated so the
       receiver-typing step is skipped); trait type-arguments in the
       header (`impl From<string> for Status` →
       `satisfies From<Status, string>`, Self first then header args in
@@ -732,6 +753,13 @@ Language:
       "collisions left to tsc by design" disposition, re-decided with
       Zuri 2026-08-06). See "the permanent boundary" table in feature 8
       for everything deliberately NOT here.
+- [ ] 4b. **Syntax re-decisions, 2026-08-07 (both breaking, ride
+      0.4.0):** drop `fn` from impl blocks — members are bare TS-style
+      methods (`fmt(self): string {}`; the word `fn` starting a member
+      gets a migration diagnostic); reserve `not` and keep it as a
+      `ZtsNot` AST node lowered in lower.rs (formatter round-trip —
+      see the `not` section above; `const not = 1` / `not(x)` calls
+      become errors).
 - [ ] 5. (stretch) impls for newtypes and unions.
 
 `zts-fmt` (no formatter can parse zts; prettier-plugin route rejected —
@@ -756,10 +784,15 @@ bidirectional TS↔zts nesting makes `embed` delegation impractical):
 
 - [ ] 11. Release 0.4.0.
 
-Open inputs from Zuri before the affected items start: keep or drop
-`fn` in impl blocks (affects items 4 and 7 and the grammar); which
-editor exhibits the impl-block indent reset (nvim tree-sitter indent
-vs vscode onEnter rules) — fix rides this phase.
+Open inputs from Zuri before the affected items start: which editor
+exhibits the impl-block indent reset (nvim tree-sitter indent vs
+vscode onEnter rules) — fix rides this phase. (`fn`: DROPPED;
+`static_assert`: renamed `constrict`, paren-free; `not`: reserved —
+all decided 2026-08-07, see item 4b and the feature sections.)
+
+Standing rule (Zuri, 2026-08-07 — also in CLAUDE.md): every syntax
+change ships WITH its VS Code + nvim highlighting updates and its
+zts-fmt print-rule updates in ONE patch-version commit.
 
 ### Phase 3 — DX
 

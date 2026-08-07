@@ -39,6 +39,7 @@ Read README.md before doing anything — it is the authoritative spec: locked fe
 - `match` is a contextual keyword: checkpoint/backtrack with the failure memo (`zts_match_speculation_failures`) and error-buffer rollback (`Tokens::truncate_errors`). Never rewind a SUCCESSFUL speculation (that reintroduces exponential parsing); never widen the speculation window without re-checking `Parser::state` checkpoint gaps.
 - ASI guards are load-bearing: `match(...)` + newline + `{` stays a call+block; the `{` of a match must share a line with `)`.
 - Every feature lands with: fork parser tests, snapshot fixtures (happy + error), and a tsc exit test proving the safety property fires.
+- **Editor + formatter parity (Zuri, 2026-08-07): every syntax change ships WITH its syntax-highlighting updates (VS Code TextMate grammar AND nvim) and its zts-fmt print-rule updates, together in ONE patch-version commit** — not as follow-ups. Practical notes: nvim currently has no viable per-construct highlight mechanism (zts constructs are bare ERROR identifier nodes to the reused TS tree-sitter parser — PR #52 disposition); until one exists, each change records its nvim disposition explicitly instead of silently skipping. zts-fmt print rules apply once the formatter lands (Phase 7 items 6-10).
 
 ## Branch Strategy
 
