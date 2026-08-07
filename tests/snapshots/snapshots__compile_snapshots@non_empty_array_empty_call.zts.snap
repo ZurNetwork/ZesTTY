@@ -1,0 +1,14 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/non_empty_array_empty_call.zts
+---
+// Passing a possibly-empty array where `T[+]` is demanded must fail
+// under tsc (exit-tested): the empty literal and a plain T[] both lack
+// the guaranteed first element.
+function head<T>(xs: [T, ...T[]]): T {
+    return xs[0];
+}
+export const bad: number = head([]);
+declare const plain: number[];
+export const alsoBad: number = head(plain);
