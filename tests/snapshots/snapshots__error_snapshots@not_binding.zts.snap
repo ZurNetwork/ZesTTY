@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/not_binding.zts
+---
+error: `not` is a reserved word in zts (the negation operator, 0.4.0); rename this binding
+ --> tests/fixtures/errors/not_binding.zts:3:7
+  |
+3 | const not = 1;
+  |       ^^^

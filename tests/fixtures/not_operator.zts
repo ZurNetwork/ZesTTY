@@ -1,8 +1,8 @@
 declare const ready: boolean;
 declare const items: string[];
-declare function not(n: number): number;
 
-// Negation forms.
+// Negation forms — `not` is a reserved word since 0.4.0, always the
+// operator in expression position.
 const a = not ready;
 const b = not not ready;
 const c = if (not ready) { "wait" } else { "go" };
@@ -10,8 +10,12 @@ const d = match (({ kind: "K", ok: ready }) as { kind: "K"; ok: boolean }) {
   K { ok } => not ok,
 };
 
-// Vanilla survivors: `not` as an ordinary identifier.
-const e = not(1);
-const f = not(2) + 1;
+// Formerly the v1 carve-outs, now negation of a parenthesized operand.
+const e = not (items.length > 0);
+const f = not(ready);
 
-console.log(a, b, c, d, e, f, items.length);
+// Property-name positions stay legal, like ES reserved words.
+const obj = { not: 1 };
+const g = obj.not;
+
+console.log(a, b, c, d, e, f, g);

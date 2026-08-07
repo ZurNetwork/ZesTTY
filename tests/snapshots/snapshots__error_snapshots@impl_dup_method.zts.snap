@@ -4,7 +4,7 @@ expression: diags
 input_file: tests/fixtures/errors/impl_dup_method.zts
 ---
 error: duplicate method `fmt` in this impl
-  --> tests/fixtures/errors/impl_dup_method.zts:13:6
+  --> tests/fixtures/errors/impl_dup_method.zts:13:3
    |
-13 |   fn fmt(self): string {
-   |      ^^^
+13 |   fmt(self): string {
+   |   ^^^

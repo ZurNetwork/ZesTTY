@@ -94,7 +94,7 @@
       ]
     },
     "zts-impl-declaration": {
-      "comment": "`impl Trait for Type {` — contextual, same-line-identifier commit rule as `union`/`newtype` (mirrors parser/zts.rs parse_ts_decl's \"impl\" arm); `fn` and bare `self` are keywords/language-variable ONLY inside this block (fn is not a keyword anywhere else in zts)",
+      "comment": "`impl Trait for Type {` — contextual, same-line-identifier commit rule as `union`/`newtype` (mirrors parser/zts.rs parse_ts_decl's \"impl\" arm); members are bare TS-style methods since 0.4.0 (`fn` removed — issue #60); bare `self` gets a language-variable scope inside this block only",
       "begin": "(?<![.$])\\b(impl)\\b\\s+([A-Za-z_$][\\w$]*)\\s+\\b(for)\\b\\s+([A-Za-z_$][\\w$]*)\\s*(\\{)",
       "beginCaptures": {
         "1": {
@@ -120,11 +120,6 @@
         }
       },
       "patterns": [
-        {
-          "comment": "`fn` method keyword — contextual to the impl block",
-          "match": "(?<![.$])\\b(fn)\\b",
-          "name": "keyword.control.fn.zts"
-        },
         {
           "comment": "bare `self` receiver (no type annotation allowed in source)",
           "match": "\\b(self)\\b(?=\\s*[,)])",
@@ -163,8 +158,8 @@
       }
     },
     "zts-not-operator": {
-      "comment": "`not` prefix sugar for `!` — contextual: only when a word/literal starts on the same line right after (`not ready`); `not(x)` calls, `not.foo`, `not => x` stay vanilla. Regex approximation of the parser's one-token lookahead — cannot special-case operator-keyword operands like `not instanceof F` (rare, left uncolored-as-negation like a call would be, i.e. best-effort).",
-      "match": "(?<![.$])\\b(not)\\b(?=[ \\t]+[A-Za-z_$0-9'\"`])",
+      "comment": "`not` — RESERVED word since 0.4.0 (issue #60): always the negation operator in expression position, including `not(x)` and `not (x)`. Property positions (`obj.not`, `{ not: 1 }`) stay uncolored via the [.$] guard; a `:` right after means a property key, also uncolored.",
+      "match": "(?<![.$])\\b(not)\\b(?![ \\t]*:)",
       "captures": {
         "1": {
           "name": "keyword.operator.not.zts"

@@ -8,7 +8,7 @@ error: an impl must be a top-level statement of the module or block that declare
    |
 7  |   if (true) impl Display for Shape {
    |  ___________^
-8  | |   fn fmt(self): string {
+8  | |   fmt(self): string {
 9  | |     return "";
 10 | |   }
 11 | | }

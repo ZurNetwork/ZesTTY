@@ -10,7 +10,7 @@ enum Shape {
 }
 
 impl Display for Shape {
-  fn fmt(self): number {
+  fmt(self): number {
     return match (self) {
       Circle { r } => r,
     };

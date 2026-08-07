@@ -4,7 +4,7 @@ interface Display<Self> {
 
 // No zts enum `Missing` in this module: the orphan rule rejects it.
 impl Display for Missing {
-  fn fmt(self): string {
+  fmt(self): string {
     return "";
   }
 }

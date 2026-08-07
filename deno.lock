@@ -1,0 +1,76 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@deno/installer-shell-setup@*": "0.3.4"
+  },
+  "jsr": {
+    "@deno/installer-shell-setup@0.3.4": {
+      "integrity": "48665d1a737d487cce6874bc97bba70a5aeffa7053aca3f60df93c6fab8963b4"
+    }
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:prettier@^3.6.0",
+        "npm:typescript@^7.0.2"
+      ]
+    },
+    "members": {
+      "editors/vscode": {
+        "packageJson": {
+          "dependencies": [
+            "npm:typescript-zestty-plugin@~0.3.1",
+            "npm:vscode-languageclient@^9.0.1"
+          ]
+        }
+      },
+      "packages/check": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@zestty/native@~0.3.1",
+            "npm:source-map-js@^1.2.0",
+            "npm:svelte-check@^4.7.4",
+            "npm:svelte@^5.56.8",
+            "npm:typescript@^5.9.3"
+          ]
+        }
+      },
+      "packages/language-server": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@zestty/native@~0.3.1",
+            "npm:source-map-js@^1.2.0",
+            "npm:typescript@^5.9.0",
+            "npm:vscode-languageserver-textdocument@^1.0.12",
+            "npm:vscode-languageserver@^9.0.1"
+          ]
+        }
+      },
+      "packages/svelte-preprocess-zestty": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@zestty/native@~0.3.1",
+            "npm:svelte@^5.42.0"
+          ]
+        }
+      },
+      "packages/typescript-plugin": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@zestty/check@~0.3.1",
+            "npm:source-map-js@^1.2.0"
+          ]
+        }
+      },
+      "packages/vite-plugin-zestty": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@zestty/native@~0.3.1",
+            "npm:source-map-js@^1.2.0",
+            "npm:vite@^7.3.0"
+          ]
+        }
+      }
+    }
+  }
+}
