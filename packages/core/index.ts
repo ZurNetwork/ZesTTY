@@ -140,6 +140,19 @@ export function ResultPipe<T, E>(r: Result<T, E>): ResultPipe<T, E> {
 }
 
 /**
+ * Narrows a possibly-empty array to zts's non-empty shape (`T[+]`,
+ * which lowers to `[T, ...T[]]`). TypeScript does not narrow on
+ * `.length` checks, so this guard is the runtime bridge:
+ *
+ * ```ts
+ * if (isNonEmpty(xs)) head(xs); // xs: [T, ...T[]] here
+ * ```
+ */
+export function isNonEmpty<T>(xs: readonly T[]): xs is [T, ...T[]] {
+  return xs.length > 0;
+}
+
+/**
  * The exhaustiveness keystone the zts compiler references in
  * committed-twins mode (`import { __ztsAbsurd } from "@zestty/core"`).
  * Not for application code: if this ever throws, a `match` was compiled

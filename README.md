@@ -730,11 +730,16 @@ Language:
       Lowers to a type alias whose constraint fails when the claim is
       false (TS2344 remapped to the assert line). `Equal`/`Expect`
       helper types ship as type-only exports from @zestty/core.
-- [ ] 3. **Non-empty array sugar `T[+]`** — lowers to `[T, ...T[]]`.
-      Callers must prove non-emptiness; `xs[0]` is `T`. Limits
-      (recorded): a runtime `.length` check does not narrow (ship an
-      `isNonEmpty` guard in @zestty/core, level 2); read-shape contract
-      (`.pop()` does not un-narrow), like all TS tuples.
+- [x] 3. **Non-empty array sugar `T[+]`** — SHIPPED. Lowers to
+      `[T, ...T[]]` (post-resolver type rewrite; `ZtsNonEmptyArray`
+      appended to TsType — a real node, not a parse-time desugar, so
+      zts-fmt round-trips it). Callers must prove non-emptiness;
+      `xs[0]` is `T` even under noUncheckedIndexedAccess (exit-tested
+      both directions: [] and plain T[] are TS2345). `isNonEmpty` guard
+      shipped in @zestty/core (a `.length` check does not narrow —
+      recorded). Read-shape contract (`.pop()` does not un-narrow),
+      like all TS tuples. Suffix composes: `string[+][]`,
+      `readonly T[+]`.
 - [ ] 4. **Traits v2** — associated functions (methods without `self` →
       merge as `Status.from(...)`; params are user-annotated so the
       receiver-typing step is skipped); trait type-arguments in the
