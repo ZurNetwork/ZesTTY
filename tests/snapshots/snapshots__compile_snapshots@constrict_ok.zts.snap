@@ -1,0 +1,28 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/constrict_ok.zts
+---
+import type { __ztsExpect, __ztsEqual, __ztsNot } from "@zestty/core";
+// Phase 7: `constrict` — erased type-level assertions. All claims here
+// are TRUE; the module must pass tsc with zero runtime output added.
+type UserId = (string) & {
+    readonly __ztsNewtype: "UserId";
+};
+const UserId = (__ztsValue: string): UserId =>__ztsValue as UserId;
+type OrderId = (string) & {
+    readonly __ztsNewtype: "OrderId";
+};
+const OrderId = (__ztsValue: string): OrderId =>__ztsValue as OrderId;
+type Config = {
+    host: string;
+    port: number;
+};
+type __ztsConstrict0 = __ztsExpect<__ztsNot<__ztsEqual<UserId, OrderId>>>;
+type __ztsConstrict1 = __ztsExpect<__ztsNot<__ztsEqual<UserId, string>>>;
+type __ztsConstrict2 = __ztsExpect<__ztsEqual<keyof Config, "host" | "port">>;
+type __ztsConstrict3 = __ztsExpect<UserId extends string ? true : false>;
+type __ztsConstrict4 = __ztsExpect<Config extends {
+    host: string;
+} ? true : false>;
+export const ok = 1;

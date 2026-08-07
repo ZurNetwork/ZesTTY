@@ -85,6 +85,8 @@ use swc_ecma_visit::{VisitMut, VisitMutWith, visit_mut_pass};
 pub fn lower(preamble_import: bool) -> impl Pass {
     visit_mut_pass(Lower {
         absurd: None,
+        constrict: None,
+        constrict_count: 0,
         preamble_import,
     })
 }
@@ -93,6 +95,15 @@ struct Lower {
     /// The `__ztsAbsurd` identifier, created on first use; its presence
     /// also signals that the helper declaration must be injected.
     absurd: Option<Ident>,
+    /// The constrict type helpers (`__ztsExpect`, `__ztsEqual`,
+    /// `__ztsNot`), created on first `constrict` (Phase 7); their
+    /// presence signals the type-only import (or inline aliases) must
+    /// be injected.
+    constrict: Option<(Ident, Ident, Ident)>,
+    /// Per-module constrict counter: alias names must self-uniquify
+    /// (`__ztsConstrict0`, `__ztsConstrict1`, ...) because hygiene is
+    /// not TS-type-aware and will NOT rename duplicate TYPE aliases.
+    constrict_count: usize,
     /// Import the helper from @zestty/core instead of emitting it inline
     /// (committed-twins mode). Scripts always inline — they cannot import.
     preamble_import: bool,
@@ -126,6 +137,75 @@ impl Lower {
         self.absurd
             .get_or_insert_with(|| private_ident!("__ztsAbsurd"))
             .clone()
+    }
+
+    fn constrict_helpers(&mut self) -> (Ident, Ident, Ident) {
+        self.constrict
+            .get_or_insert_with(|| {
+                (
+                    private_ident!("__ztsExpect"),
+                    private_ident!("__ztsEqual"),
+                    private_ident!("__ztsNot"),
+                )
+            })
+            .clone()
+    }
+
+    /// `constrict A == B;` → `type __ztsConstrict = <claim>;` (Phase 7).
+    ///
+    /// The claim is a generic-constraint violation when false:
+    /// - `==` → `__ztsExpect<__ztsEqual<A, B>>`
+    /// - `!=` → `__ztsExpect<__ztsNot<__ztsEqual<A, B>>>`
+    /// - `extends` → `__ztsExpect<A extends B ? true : false>`
+    ///
+    /// The alias id carries the constrict's ORIGINAL span, so the TS2344
+    /// lands on the assert's own line in the `.zts`. Fully erased; the
+    /// alias name is a fresh-marked `__ztsConstrict` (hygiene dedupes
+    /// multiple asserts per module).
+    fn lower_constrict(&mut self, c: ZtsConstrictDecl) -> Decl {
+        let (expect, equal, not) = self.constrict_helpers();
+        let span = c.span;
+        let type_ref = |ident: &Ident, params: Vec<Box<TsType>>| {
+            Box::new(TsType::TsTypeRef(TsTypeRef {
+                span,
+                type_name: TsEntityName::Ident(ident.clone()),
+                type_params: Some(Box::new(TsTypeParamInstantiation { span, params })),
+            }))
+        };
+        let claim = match c.op {
+            ZtsConstrictOp::Eq => type_ref(&equal, vec![c.left, c.right]),
+            ZtsConstrictOp::NotEq => {
+                let eq = type_ref(&equal, vec![c.left, c.right]);
+                type_ref(&not, vec![eq])
+            }
+            ZtsConstrictOp::Extends => {
+                let bool_lit = |value: bool| {
+                    Box::new(TsType::TsLitType(TsLitType {
+                        span,
+                        lit: TsLit::Bool(Bool { span, value }),
+                    }))
+                };
+                Box::new(TsType::TsConditionalType(TsConditionalType {
+                    span,
+                    check_type: c.left,
+                    extends_type: c.right,
+                    true_type: bool_lit(true),
+                    false_type: bool_lit(false),
+                }))
+            }
+        };
+
+        let n = self.constrict_count;
+        self.constrict_count += 1;
+        let mut alias_id = private_ident!(format!("__ztsConstrict{n}"));
+        alias_id.span = span;
+        Decl::TsTypeAlias(Box::new(TsTypeAliasDecl {
+            span,
+            declare: false,
+            id: alias_id,
+            type_params: None,
+            type_ann: type_ref(&expect, vec![claim]),
+        }))
     }
 
     fn lower_match(&mut self, m: MatchExpr) -> Expr {
@@ -954,6 +1034,47 @@ impl VisitMut for Lower {
                     .insert(idx, ModuleItem::Stmt(self.absurd_decl(absurd)));
             }
         }
+
+        if let Some(helpers) = self.constrict.take() {
+            if self.preamble_import {
+                // import type { __ztsExpect, __ztsEqual, __ztsNot } from
+                // "@zestty/core"; — type-only, fully erased, same
+                // hygiene story as the absurd import (locals ARE the
+                // exported names; user `__zts*` idents are rejected by
+                // semantic F9).
+                let idx = helper_insert_index(&module.body);
+                let (expect, equal, not) = helpers;
+                let spec = |local: Ident| {
+                    ImportSpecifier::Named(ImportNamedSpecifier {
+                        span: DUMMY_SP,
+                        local,
+                        imported: None,
+                        is_type_only: false,
+                    })
+                };
+                module.body.insert(
+                    idx,
+                    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+                        span: DUMMY_SP,
+                        specifiers: vec![spec(expect), spec(equal), spec(not)],
+                        src: Box::new(Str {
+                            span: DUMMY_SP,
+                            value: atom!("@zestty/core").into(),
+                            raw: None,
+                        }),
+                        type_only: true,
+                        with: None,
+                        phase: Default::default(),
+                    })),
+                );
+            } else {
+                let idx = helper_insert_index(&module.body);
+                let decls = constrict_helper_decls(helpers);
+                module
+                    .body
+                    .splice(idx..idx, decls.into_iter().map(ModuleItem::Stmt));
+            }
+        }
     }
 
     fn visit_mut_script(&mut self, script: &mut Script) {
@@ -963,5 +1084,158 @@ impl VisitMut for Lower {
             let idx = script_insert_index(&script.body);
             script.body.insert(idx, self.absurd_decl(absurd));
         }
+
+        if let Some(helpers) = self.constrict.take() {
+            // Scripts cannot import: always inline the erased helpers.
+            let idx = script_insert_index(&script.body);
+            script
+                .body
+                .splice(idx..idx, constrict_helper_decls(helpers));
+        }
     }
+
+    fn visit_mut_decl(&mut self, d: &mut Decl) {
+        d.visit_mut_children_with(self);
+        if matches!(d, Decl::ZtsConstrict(..)) {
+            let Decl::ZtsConstrict(c) = d.take() else {
+                unreachable!()
+            };
+            *d = self.lower_constrict(*c);
+        }
+    }
+}
+
+/// The inline (no @zestty/core) forms of the constrict helpers — type
+/// aliases only, erased:
+///
+/// ```ts
+/// type __ztsExpect<T extends true> = T;
+/// type __ztsEqual<X, Y> =
+///     (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2)
+///         ? true : false;
+/// type __ztsNot<B extends boolean> = B extends true ? false : true;
+/// ```
+fn constrict_helper_decls((expect, equal, not): (Ident, Ident, Ident)) -> Vec<Stmt> {
+    let bool_lit = |value: bool| {
+        Box::new(TsType::TsLitType(TsLitType {
+            span: DUMMY_SP,
+            lit: TsLit::Bool(Bool {
+                span: DUMMY_SP,
+                value,
+            }),
+        }))
+    };
+    let param_ref = |name: &Ident| {
+        Box::new(TsType::TsTypeRef(TsTypeRef {
+            span: DUMMY_SP,
+            type_name: TsEntityName::Ident(name.clone()),
+            type_params: None,
+        }))
+    };
+    let type_param = |name: &Ident, constraint: Option<Box<TsType>>| TsTypeParam {
+        span: DUMMY_SP,
+        name: name.clone(),
+        is_in: false,
+        is_out: false,
+        is_const: false,
+        constraint,
+        default: None,
+    };
+    let alias = |id: Ident, params: Vec<TsTypeParam>, ann: Box<TsType>| {
+        Stmt::Decl(Decl::TsTypeAlias(Box::new(TsTypeAliasDecl {
+            span: DUMMY_SP,
+            declare: false,
+            id,
+            type_params: Some(Box::new(TsTypeParamDecl {
+                span: DUMMY_SP,
+                params,
+            })),
+            type_ann: ann,
+        })))
+    };
+
+    // type __ztsExpect<T extends true> = T;
+    let t = private_ident!("T");
+    let expect_decl = alias(
+        expect,
+        vec![type_param(&t, Some(bool_lit(true)))],
+        param_ref(&t),
+    );
+
+    // (<T>() => T extends SIDE ? 1 : 2)
+    let probe = |side: &Ident| {
+        let t = private_ident!("T");
+        let num_lit = |value: f64| {
+            Box::new(TsType::TsLitType(TsLitType {
+                span: DUMMY_SP,
+                lit: TsLit::Number(Number {
+                    span: DUMMY_SP,
+                    value,
+                    raw: None,
+                }),
+            }))
+        };
+        // The parens are load-bearing (same lesson as the newtype brand):
+        // stock codegen has no type-level fixer, and an unwrapped fn-type
+        // return swallows the outer `extends ... ? ... : ...` into its
+        // own conditional.
+        Box::new(TsType::TsParenthesizedType(TsParenthesizedType {
+            span: DUMMY_SP,
+            type_ann: Box::new(TsType::TsFnOrConstructorType(
+                TsFnOrConstructorType::TsFnType(TsFnType {
+                    span: DUMMY_SP,
+                    params: vec![],
+                    type_params: Some(Box::new(TsTypeParamDecl {
+                        span: DUMMY_SP,
+                        params: vec![type_param(&t, None)],
+                    })),
+                    type_ann: Box::new(TsTypeAnn {
+                        span: DUMMY_SP,
+                        type_ann: Box::new(TsType::TsConditionalType(TsConditionalType {
+                            span: DUMMY_SP,
+                            check_type: param_ref(&t),
+                            extends_type: param_ref(side),
+                            true_type: num_lit(1.0),
+                            false_type: num_lit(2.0),
+                        })),
+                    }),
+                }),
+            )),
+        }))
+    };
+
+    // type __ztsEqual<X, Y> = probe(X) extends probe(Y) ? true : false;
+    let x = private_ident!("X");
+    let y = private_ident!("Y");
+    let equal_decl = alias(
+        equal,
+        vec![type_param(&x, None), type_param(&y, None)],
+        Box::new(TsType::TsConditionalType(TsConditionalType {
+            span: DUMMY_SP,
+            check_type: probe(&x),
+            extends_type: probe(&y),
+            true_type: bool_lit(true),
+            false_type: bool_lit(false),
+        })),
+    );
+
+    // type __ztsNot<B extends boolean> = B extends true ? false : true;
+    let b = private_ident!("B");
+    let bool_kw = Box::new(TsType::TsKeywordType(TsKeywordType {
+        span: DUMMY_SP,
+        kind: TsKeywordTypeKind::TsBooleanKeyword,
+    }));
+    let not_decl = alias(
+        not,
+        vec![type_param(&b, Some(bool_kw))],
+        Box::new(TsType::TsConditionalType(TsConditionalType {
+            span: DUMMY_SP,
+            check_type: param_ref(&b),
+            extends_type: bool_lit(true),
+            true_type: bool_lit(false),
+            false_type: bool_lit(true),
+        })),
+    );
+
+    vec![expect_decl, equal_decl, not_decl]
 }
