@@ -389,10 +389,19 @@ impl Checker<'_> {
     ///   imported traits still defer to the generated `satisfies` — we
     ///   read local syntax, never types (the type-plane rule).
     fn check_zts_impls(&mut self, decls: &[(&Decl, bool)], module_items: Option<&[ModuleItem]>) {
-        let enums: HashSet<&swc_atoms::Atom> = decls
+        // Phase 7 item 5: impls target enums, newtypes, and unions.
+        #[derive(Clone, Copy, PartialEq)]
+        enum ImplTarget {
+            Enum,
+            Newtype,
+            Union,
+        }
+        let targets: std::collections::HashMap<&swc_atoms::Atom, ImplTarget> = decls
             .iter()
             .filter_map(|(d, _)| match d {
-                Decl::ZtsEnum(e) => Some(&e.ident.sym),
+                Decl::ZtsEnum(e) => Some((&e.ident.sym, ImplTarget::Enum)),
+                Decl::ZtsNewtype(n) => Some((&n.ident.sym, ImplTarget::Newtype)),
+                Decl::ZtsUnion(u) => Some((&u.ident.sym, ImplTarget::Union)),
                 _ => None,
             })
             .collect();
@@ -489,16 +498,34 @@ impl Checker<'_> {
                      const — exporting the enum exports its methods",
                 );
             }
-            if !enums.contains(&i.for_ident.sym) {
+            let target_kind = targets.get(&i.for_ident.sym).copied();
+            if target_kind.is_none() {
                 self.err(
                     i.for_ident.span,
                     &format!(
-                        "impl target `{}` is not a zts enum declared in this scope (the orphan \
-                         rule: an impl lives in the module that declares its type; v1 supports \
-                         enum impls only)",
+                        "impl target `{}` is not a zts enum, newtype, or union declared in this \
+                         scope (the orphan rule: an impl lives in the module that declares its \
+                         type)",
                         i.for_ident.sym
                     ),
                 );
+            }
+            // Union factories already carry `values` and `has`; a method
+            // by either name would be a duplicate key in generated code —
+            // reject with the original span instead.
+            if target_kind == Some(ImplTarget::Union) {
+                for m in &i.methods {
+                    if m.name.sym == "values" || m.name.sym == "has" {
+                        self.err(
+                            m.name.span,
+                            &format!(
+                                "method `{}` collides with the built-in `{}` member of union \
+                                 `{}`",
+                                m.name.sym, m.name.sym, i.for_ident.sym
+                            ),
+                        );
+                    }
+                }
             }
 
             // (a) trait name must exist in the module (module level only).

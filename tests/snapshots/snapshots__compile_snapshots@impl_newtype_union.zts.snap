@@ -1,0 +1,49 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/impl_newtype_union.zts
+---
+type UserId = (string) & {
+    readonly __ztsNewtype: "UserId";
+};
+const UserId = globalThis.Object.assign((__ztsValue: string): UserId =>__ztsValue as UserId, {
+    fmt (self: UserId): string {
+        return `user:${self}`;
+    },
+    parse (raw: string): UserId {
+        return UserId(raw.trim());
+    }
+} satisfies {
+    [key: string]: unknown;
+} & Display<UserId> & Parse<UserId>);
+type Level = "info" | "warn";
+const Level = {
+    values: [
+        "info",
+        "warn"
+    ] as const,
+    has: (__ztsRaw: string): __ztsRaw is Level =>Level.values.indexOf(__ztsRaw as Level) !== -1,
+    fmt (self: Level): string {
+        return self.toUpperCase();
+    }
+} satisfies {
+    [key: string]: unknown;
+} & Display<Level>;
+// Phase 7 item 5: impls for newtypes and unions.
+interface Display<Self> {
+    fmt(self: Self): string;
+}
+interface Parse<Self> {
+    parse(raw: string): Self;
+}
+export const u: UserId = UserId("u1");
+export const viaParse: UserId = UserId.parse("  u2  ");
+export const label: string = UserId.fmt(u);
+declare const lvl: Level;
+export const lvlLabel: string = Level.fmt(lvl);
+export const still = Level.has("info");
+export function describe<T>(x: T, impl: Display<T>): string {
+    return impl.fmt(x);
+}
+export const d1: string = describe(u, UserId);
+export const d2: string = describe(lvl, Level);
