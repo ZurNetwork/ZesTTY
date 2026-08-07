@@ -95,3 +95,10 @@ vim.lsp.config("ts_ls", {
   `package.json`/`.git` root markers.
 - Svelte `<script lang="zts">` blocks are not injected yet — use
   `zts-check` for those in CI, and keep an eye on the LSP tracking work.
+
+## Formatting
+
+`vim.lsp.buf.format()` works on zts buffers: the language server serves
+`textDocument/formatting` backed by zts-fmt (the dprint-fork engine,
+Phase 7) — idempotent, zts-aware, line width 80. Wire it to save with
+your usual `BufWritePre` autocmd if you want format-on-save.

@@ -16,6 +16,7 @@ Read README.md before doing anything — it is the authoritative spec: locked fe
 - `cargo run --bin zestty -- file.zts [-o out.ts] [--no-map]` — the CLI; writes `file.ts` + `file.ts.map`.
 - `npm test` — all packages/* node:test suites (native binding, Vite plugin, Svelte preprocessor, @zestty/core).
 - `npm run build:native` — rebuild the napi binding after Rust changes (copies the .node into packages/zestty-native).
+- `cargo run -p zts-fmt -- [--check] [paths]` — format `.zts`/`.ztsx` (Phase 7; engine = the ../zts-fmt-forks/* dprint forks, line width 80; editors get it via the language-server's textDocument/formatting). Do NOT run it over tests/fixtures — several fixtures encode load-bearing layout (ASI).
 - Fork tests: `cd ../swc_rustify && cargo test -p swc_ecma_parser --features typescript --lib zts::` (all zts parser tests live in `src/parser/zts.rs`).
 - Fork visit regeneration after ANY AST node change: `cd ../swc_rustify && cargo test -p generate-code test_ecmascript` (never hand-edit `generated.rs`).
 
@@ -25,6 +26,7 @@ Read README.md before doing anything — it is the authoritative spec: locked fe
 - `crates/zestty-napi` — Node binding; every compile runs on a 64MiB-stack thread.
 - `packages/` — npm workspace: `zestty-native`, `vite-plugin-zestty`, `svelte-preprocess-zestty`, `core` (@zestty/core Result).
 - `../swc_rustify` (fork of swc, branch `zts`, `main` tracks upstream) — extended AST/parser. All zts parser code in `crates/swc_ecma_parser/src/parser/zts.rs`; AST nodes in `swc_ecma_ast` (`expr.rs`, `decl.rs`).
+- `../zts-fmt-forks/{dprint-plugin-typescript,deno_ast,dprint-swc-ext}` (ZurNetwork forks, branch `zts`) — the zts-fmt engine; print rules + 669-spec suite live in the plugin fork. View AST regenerates via its scripts/generate.ts against the swc fork (nightly-2025-08-20).
 
 ## Locked rules (from README — non-negotiable)
 

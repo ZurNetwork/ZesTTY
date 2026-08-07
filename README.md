@@ -31,6 +31,12 @@ Two sibling repos:
                  `main` stays clean tracking upstream.
   zts/          ← this repo. The compiler driver: semantic pass, lowering
                  pass, emit, CLI. Path-depends on ../swc_rustify/crates/*.
+  zts-fmt-forks/ ← the zts-fmt engine (Phase 7): ZurNetwork forks of
+                 dprint-plugin-typescript + deno_ast + dprint-swc-ext,
+                 zts branches, repointed at ../swc_rustify. Print rules
+                 for every zts node; 669 specs + 1144 idempotence fixed
+                 points live THERE. crates/zts-fmt path-depends on the
+                 plugin fork.
 ```
 
 ### Pipeline
@@ -845,22 +851,28 @@ Language:
 `zts-fmt` (no formatter can parse zts; prettier-plugin route rejected —
 bidirectional TS↔zts nesting makes `embed` delegation impractical):
 
-- [ ] 6. **Feasibility spike (the risk gate)**: fork
+- [x] 6. DONE (verdict GREEN, then productionized into the three forks). **Feasibility spike (the risk gate)**: fork
       dprint-plugin-typescript (Rust, prettier-style output, built on
       swc's AST), repoint its swc deps at `../swc_rustify@zts`
       path-deps, confirm the version pin aligns and a zts-flag parse
       flows through its pipeline. A day to learn what a month would
       otherwise cost.
-- [ ] 7. Print rules for the zts nodes (match, enums-with-data,
+- [x] 7. DONE, all 19 zts nodes. Print rules for the zts nodes (match, enums-with-data,
       expression-if chains, newtype, union, impl/fn, not, postfix `?`)
       — donor-node discipline, mirroring existing dprint patterns.
-- [ ] 8. Idempotence (`fmt(fmt(x)) == fmt(x)`) + snapshot suite over
+- [x] 8. DONE: 21 zts spec files / 143 specs; 1144 idempotence fixed points (4 configs, 2 starting points, triple-pass). Idempotence suite over
       the existing fixtures; comment preservation.
-- [ ] 9. Ship `zts-fmt` (Rust binary + napi export), served through
+- [x] 9. DONE: crates/zts-fmt (bin `zts-fmt [--check]`, zts/ztsx only, line width 80) + `format()` on @zestty/native, served through
       @zestty/language-server `textDocument/formatting` so VS Code and
       nvim get format-on-save with zero new editor wiring; defaults
       tuned to this repo's prettier style.
-- [ ] 10. `zts-fmt --check` over fixtures joins the CI format job; docs.
+- [x] 10. AMENDED + DONE: fixtures are deliberately NOT format-gated —
+      several encode load-bearing layout (the ASI regression fixture
+      REQUIRES `match(1)` + newline + block) and reformatting them
+      would destroy what they test. The gate is instead the fork's
+      1144 idempotence fixed points plus crates/zts-fmt's smoke corpus
+      (canonical constructs format, are idempotent, and every construct
+      round-trips). CI clones the three forks as siblings.
 
 - [ ] 11. Release 0.4.0.
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compile } from "@zestty/native";
+import { compile, format } from "@zestty/native";
 
 const SHAPE = `
 type Shape =
@@ -78,4 +78,11 @@ test("deep nesting is a diagnostic, not a crash", () => {
     () => compile(src, "deep.zts"),
     (err) => err.message.includes("nesting exceeds"),
   );
+});
+
+test("zts-fmt: format() canonicalizes and is null when already formatted", () => {
+  const messy = "enum   E{A{x:number}}\n";
+  const once = format(messy, "t.zts");
+  assert.match(once, /enum E \{\n  A \{ x: number \},\n\}/);
+  assert.equal(format(once, "t.zts"), null);
 });
