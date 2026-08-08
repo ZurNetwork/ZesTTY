@@ -1855,7 +1855,7 @@ dependencies = [
 
 [[package]]
 name = "zestty-napi"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "napi",
  "napi-build",
@@ -1872,8 +1872,9 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zts-fmt"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "dprint-plugin-typescript",
+ "serde_json",
 ]

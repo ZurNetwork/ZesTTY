@@ -866,6 +866,22 @@ bidirectional TS↔zts nesting makes `embed` delegation impractical):
       @zestty/language-server `textDocument/formatting` so VS Code and
       nvim get format-on-save with zero new editor wiring; defaults
       tuned to this repo's prettier style.
+      CONFIG (issue #70, post-0.4.0): a prettier-shaped subset —
+      `printWidth` (default 80), `useTabs`, `singleQuote`, plus the
+      `sortImports` opt-in — from a `zts-fmt.json` discovered upward
+      from each formatted file; unknown keys are errors (fail-closed,
+      like zts-check), deliberately NOT `.prettierrc` (`.zts` is
+      excluded from prettier in consumers; half-sharing a file invites
+      drift). All three surfaces share the resolution: CLI flags
+      (`--print-width/--use-tabs/--single-quote/--sort-imports`) and
+      napi `format(source, filename, options?)` overlay the discovered
+      file; the LS gets it purely via discovery (editors can't pass
+      flags), and LSP tabSize/insertSpaces are deliberately ignored so
+      CLI and editor emit stay identical. RULING (Zuri, 2026-08-08):
+      canonical emit never reorders imports/exports or named
+      specifiers — prettier's posture; side-effect import order makes
+      sorting a semantic hazard — dprint's sort is the `sortImports`
+      opt-in.
 - [x] 10. AMENDED + DONE: fixtures are deliberately NOT format-gated —
       several encode load-bearing layout (the ASI regression fixture
       REQUIRES `match(1)` + newline + block) and reformatting them

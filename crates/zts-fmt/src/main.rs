@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use zts_fmt::{DEFAULT_LINE_WIDTH, format_zts};
+use zts_fmt::{DEFAULT_LINE_WIDTH, FmtOptions, format_zts_with, resolve_for};
 
 const SKIP_DIRS: &[&str] = &[
     "node_modules",
@@ -48,11 +48,30 @@ fn collect(path: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
 fn main() -> ExitCode {
     let mut check = false;
     let mut paths: Vec<PathBuf> = Vec::new();
-    for arg in std::env::args().skip(1) {
+    let mut cli_opts = FmtOptions::default();
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
         match arg.as_str() {
             "--check" => check = true,
+            "--use-tabs" => cli_opts.use_tabs = Some(true),
+            "--single-quote" => cli_opts.single_quote = Some(true),
+            "--sort-imports" => cli_opts.sort_imports = Some(true),
+            "--print-width" => {
+                cli_opts.print_width = match args.next().and_then(|w| w.parse().ok()) {
+                    Some(w) if w > 0 => Some(w),
+                    _ => {
+                        eprintln!("zts-fmt: --print-width requires a positive integer");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
             "-h" | "--help" => {
-                eprintln!("usage: zts-fmt [--check] [paths...]  (line width {DEFAULT_LINE_WIDTH})");
+                eprintln!(
+                    "usage: zts-fmt [--check] [--print-width <n>] [--use-tabs] [--single-quote] [--sort-imports] [paths...]"
+                );
+                eprintln!(
+                    "options default to a zts-fmt.json discovered upward from each file (flags override), then printWidth {DEFAULT_LINE_WIDTH}, spaces, double quotes, imports kept in source order"
+                );
                 return ExitCode::SUCCESS;
             }
             _ => paths.push(PathBuf::from(arg)),
@@ -81,7 +100,15 @@ fn main() -> ExitCode {
                 continue;
             }
         };
-        match format_zts(file, source.clone()) {
+        let opts = match resolve_for(file) {
+            Ok(discovered) => discovered.overlay(&cli_opts),
+            Err(e) => {
+                eprintln!("zts-fmt: {}: {e}", file.display());
+                errors += 1;
+                continue;
+            }
+        };
+        match format_zts_with(file, source.clone(), &opts) {
             Ok(None) => {}
             Ok(Some(formatted)) => {
                 if check {

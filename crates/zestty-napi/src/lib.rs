@@ -34,15 +34,48 @@ pub struct CompileOptions {
 
 const COMPILE_STACK_SIZE: usize = 64 * 1024 * 1024;
 
+#[napi(object)]
+#[derive(Default)]
+pub struct FormatOptions {
+    /// prettier `printWidth`; default 80.
+    pub print_width: Option<u32>,
+    /// prettier `useTabs`; default false.
+    pub use_tabs: Option<bool>,
+    /// prettier `singleQuote`; default false.
+    pub single_quote: Option<bool>,
+    /// Opt in to dprint's import/export sorting. Default false —
+    /// canonical emit never reorders module declarations (issue #70).
+    pub sort_imports: Option<bool>,
+}
+
 /// Format zts source (Phase 7: zts-fmt via the dprint fork). Returns
-/// null when the input is already formatted. Runs on the same 64 MiB
-/// thread discipline as compile — the formatter parses recursively too.
+/// null when the input is already formatted. Options default to the
+/// `zts-fmt.json` discovered upward from `filename` (issue #70);
+/// explicit fields override it. Runs on the same 64 MiB thread
+/// discipline as compile — the formatter parses recursively too.
 #[napi]
-pub fn format(source: String, filename: String) -> napi::Result<Option<String>> {
+pub fn format(
+    source: String,
+    filename: String,
+    options: Option<FormatOptions>,
+) -> napi::Result<Option<String>> {
+    let explicit = {
+        let o = options.unwrap_or_default();
+        zts_fmt::FmtOptions {
+            print_width: o.print_width,
+            use_tabs: o.use_tabs,
+            single_quote: o.single_quote,
+            sort_imports: o.sort_imports,
+        }
+    };
     let handle = std::thread::Builder::new()
         .name("zts-fmt".into())
         .stack_size(COMPILE_STACK_SIZE)
-        .spawn(move || zts_fmt::format_zts(std::path::Path::new(&filename), source))
+        .spawn(move || {
+            let path = std::path::Path::new(&filename);
+            let opts = zts_fmt::resolve_for(path)?.overlay(&explicit);
+            zts_fmt::format_zts_with(path, source, &opts)
+        })
         .map_err(|e| napi::Error::from_reason(format!("zts-fmt: failed to spawn: {e}")))?;
 
     match handle.join() {

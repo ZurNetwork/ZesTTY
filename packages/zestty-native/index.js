@@ -42,13 +42,16 @@ export function compile(source, filename, options) {
 
 /**
  * Format zts source (Phase 7: zts-fmt via the dprint fork). Returns
- * null when the input is already formatted.
+ * null when the input is already formatted. Options default to the
+ * `zts-fmt.json` discovered upward from `filename` (issue #70);
+ * explicit fields override it.
  *
  * @param {string} source
  * @param {string} filename
+ * @param {{ printWidth?: number, useTabs?: boolean, singleQuote?: boolean, sortImports?: boolean }} [options]
  * @returns {string | null}
- * @throws {Error} when the source does not parse
+ * @throws {Error} when the source does not parse or the config is invalid
  */
-export function format(source, filename) {
-  return binding.format(source, filename);
+export function format(source, filename, options) {
+  return binding.format(source, filename, options);
 }
