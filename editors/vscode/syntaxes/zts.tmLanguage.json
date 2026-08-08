@@ -73,6 +73,15 @@
               "include": "#zts-balanced-braces"
             },
             {
+              "comment": "`mut field: Type` — readonly opt-out (Phase 7 item 1); only before a field, `mut` elsewhere stays vanilla",
+              "match": "\\b(mut)\\s+(?=[A-Za-z_$][\\w$]*\\s*:)",
+              "captures": {
+                "1": {
+                  "name": "storage.modifier.mut.zts"
+                }
+              }
+            },
+            {
               "match": "\\b([A-Za-z_$][\\w$]*)\\s*(:)",
               "captures": {
                 "1": {
