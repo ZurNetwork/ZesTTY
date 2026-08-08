@@ -11,8 +11,10 @@ concurrency:
   cancel-in-progress: true
 
 # ZesTTY path-depends on the swc fork as a SIBLING directory
-# (../swc_rustify), so every job checks out two repos side by side and
-# runs from the ZesTTY subdirectory.
+# (../swc_rustify), and since Phase 7 on the zts-fmt formatter forks
+# under ../zts-fmt-forks/* (dprint-plugin-typescript + deno_ast +
+# dprint-swc-ext, ZurNetwork forks, zts branches) — so every job checks
+# out all five repos side by side and runs from the ZesTTY subdirectory.
 
 jobs:
   format:
@@ -30,6 +32,21 @@ jobs:
           repository: ProgrammingCheetah/swc_rustify
           ref: zts
           path: swc_rustify
+      - uses: actions/checkout@v4
+        with:
+          repository: ZurNetwork/dprint-plugin-typescript
+          ref: zts
+          path: zts-fmt-forks/dprint-plugin-typescript
+      - uses: actions/checkout@v4
+        with:
+          repository: ZurNetwork/deno_ast
+          ref: zts
+          path: zts-fmt-forks/deno_ast
+      - uses: actions/checkout@v4
+        with:
+          repository: ZurNetwork/dprint-swc-ext
+          ref: zts
+          path: zts-fmt-forks/dprint-swc-ext
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -39,7 +56,7 @@ jobs:
       # NOT --all: that reaches through the path-deps into the swc fork,
       # whose .rustfmt.toml uses nightly-only options — stable rustfmt then
       # disagrees with the fork's committed formatting.
-      - run: cargo fmt --check -p zestty -p zestty-napi
+      - run: cargo fmt --check -p zestty -p zestty-napi -p zts-fmt
       - run: npm ci
       - run: npm run format:check
 
@@ -58,6 +75,21 @@ jobs:
           repository: ProgrammingCheetah/swc_rustify
           ref: zts
           path: swc_rustify
+      - uses: actions/checkout@v4
+        with:
+          repository: ZurNetwork/dprint-plugin-typescript
+          ref: zts
+          path: zts-fmt-forks/dprint-plugin-typescript
+      - uses: actions/checkout@v4
+        with:
+          repository: ZurNetwork/deno_ast
+          ref: zts
+          path: zts-fmt-forks/deno_ast
+      - uses: actions/checkout@v4
+        with:
+          repository: ZurNetwork/dprint-swc-ext
+          ref: zts
+          path: zts-fmt-forks/dprint-swc-ext
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -81,6 +113,21 @@ jobs:
           repository: ProgrammingCheetah/swc_rustify
           ref: zts
           path: swc_rustify
+      - uses: actions/checkout@v4
+        with:
+          repository: ZurNetwork/dprint-plugin-typescript
+          ref: zts
+          path: zts-fmt-forks/dprint-plugin-typescript
+      - uses: actions/checkout@v4
+        with:
+          repository: ZurNetwork/deno_ast
+          ref: zts
+          path: zts-fmt-forks/deno_ast
+      - uses: actions/checkout@v4
+        with:
+          repository: ZurNetwork/dprint-swc-ext
+          ref: zts
+          path: zts-fmt-forks/dprint-swc-ext
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

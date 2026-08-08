@@ -39,3 +39,16 @@ const binding = load();
 export function compile(source, filename, options) {
   return binding.compile(source, filename, options);
 }
+
+/**
+ * Format zts source (Phase 7: zts-fmt via the dprint fork). Returns
+ * null when the input is already formatted.
+ *
+ * @param {string} source
+ * @param {string} filename
+ * @returns {string | null}
+ * @throws {Error} when the source does not parse
+ */
+export function format(source, filename) {
+  return binding.format(source, filename);
+}

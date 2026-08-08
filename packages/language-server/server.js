@@ -11,6 +11,7 @@ import { TextDocuments } from "vscode-languageserver";
 import { TextDocument } from "vscode-languageserver-textdocument";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ZtsProject } from "./lib.js";
+import { format } from "@zestty/native";
 
 const connection = createConnection(ProposedFeatures.all);
 const documents = new TextDocuments(TextDocument);
@@ -31,6 +32,7 @@ connection.onInitialize((params) => {
       completionProvider: {
         triggerCharacters: [".", '"', "'"],
       },
+      documentFormattingProvider: true,
     },
   };
 });
@@ -57,6 +59,33 @@ connection.onHover(({ textDocument, position }) => {
 
 connection.onCompletion(({ textDocument, position }) => {
   return project.completions(fileURLToPath(textDocument.uri), position);
+});
+
+connection.onDocumentFormatting(({ textDocument }) => {
+  // zts-fmt (Phase 7): full-document format through the native binding.
+  // One whole-document edit — the engine is idempotent, so editors that
+  // re-request on save converge immediately. Errors (unparseable
+  // buffers) return no edits rather than surfacing a modal: the
+  // diagnostics pane already explains WHY it does not parse.
+  const doc = documents.get(textDocument.uri);
+  if (!doc) return null;
+  const text = doc.getText();
+  let formatted;
+  try {
+    formatted = format(text, fileURLToPath(textDocument.uri));
+  } catch {
+    return null;
+  }
+  if (formatted == null) return [];
+  return [
+    {
+      range: {
+        start: { line: 0, character: 0 },
+        end: doc.positionAt(text.length),
+      },
+      newText: formatted,
+    },
+  ];
 });
 
 connection.onDefinition(({ textDocument, position }) => {

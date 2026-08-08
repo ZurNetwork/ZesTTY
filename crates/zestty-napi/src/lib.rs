@@ -34,6 +34,26 @@ pub struct CompileOptions {
 
 const COMPILE_STACK_SIZE: usize = 64 * 1024 * 1024;
 
+/// Format zts source (Phase 7: zts-fmt via the dprint fork). Returns
+/// null when the input is already formatted. Runs on the same 64 MiB
+/// thread discipline as compile — the formatter parses recursively too.
+#[napi]
+pub fn format(source: String, filename: String) -> napi::Result<Option<String>> {
+    let handle = std::thread::Builder::new()
+        .name("zts-fmt".into())
+        .stack_size(COMPILE_STACK_SIZE)
+        .spawn(move || zts_fmt::format_zts(std::path::Path::new(&filename), source))
+        .map_err(|e| napi::Error::from_reason(format!("zts-fmt: failed to spawn: {e}")))?;
+
+    match handle.join() {
+        Ok(Ok(out)) => Ok(out),
+        Ok(Err(err)) => Err(napi::Error::from_reason(format!("zts-fmt: {err}"))),
+        Err(_) => Err(napi::Error::from_reason(
+            "zts-fmt: formatter panicked; this is a bug in zts, please report it",
+        )),
+    }
+}
+
 #[napi]
 pub fn compile(
     source: String,

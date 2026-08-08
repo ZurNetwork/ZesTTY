@@ -1,0 +1,12 @@
+[package]
+name = "zts-fmt"
+version = "0.3.1"
+edition = "2024"
+
+# The formatter engine is the ZesTTY fork of dprint-plugin-typescript
+# (Phase 7 items 6-10): dprint's battle-tested TS layout running on
+# swc_rustify's zts AST, extended with print rules for every zts node.
+# Sibling checkout, like ../swc_rustify (CI clones ZurNetwork forks).
+[dependencies]
+dprint-plugin-typescript = { path = "../../../zts-fmt-forks/dprint-plugin-typescript" }
+anyhow = "1"
