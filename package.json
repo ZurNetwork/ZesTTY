@@ -6,10 +6,12 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "editors/vscode"
+    "editors/vscode",
+    "bench"
   ],
   "scripts": {
     "build:native": "cargo build -p zestty-napi --release && cp target/release/libzestty_napi.so packages/zestty-native/zestty.linux-x64-gnu.node",
+    "bench": "node bench/run.js",
     "test": "npm run test --workspaces --if-present",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

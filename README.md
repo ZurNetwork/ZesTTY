@@ -893,9 +893,18 @@ break"), each its own patch with the normal PR flow and tests. Order
 is load-bearing — no optimization lands without a before/after number
 from the harness:
 
-- [ ] 1. **Benchmark harness** — compile-time suite over the fixtures +
-      a synthetic large module, LS keystroke latency, zts-check
-      wall-clock. Lands FIRST; every later item cites its numbers.
+- [x] 1. **Benchmark harness** — SHIPPED (issue #67). `npm run bench`
+      (`bench/`): compile-time suite over the green fixtures + a
+      deterministic synthetic large module + a tiny file (pure per-call
+      overhead) through @zestty/native, LS didChange→publishDiagnostics
+      keystroke latency + completion latency over real stdio LSP, and
+      zts-check wall-clock over a synthetic project. JSON results,
+      `--baseline` diff mode, `--smoke` gate in npm test; the v0.4.0
+      baseline is committed at bench/baselines/v0.4.0.json. Every later
+      item cites its numbers — headline finding: keystroke latency
+      ~105ms on a 3k-line module vs ~8ms for the raw compile of the
+      same text (the LS overhead, not the compiler, is the target),
+      while per-call native overhead is ~0.12ms.
 - [ ] 2. **Toolchain optimization round** — napi reusable sized worker
       thread (replaces the per-call 64 MiB spawn; preserves the
       stack-safety property), LS incremental/debounced recompile,
