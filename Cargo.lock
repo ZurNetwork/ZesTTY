@@ -1838,7 +1838,7 @@ dependencies = [
 
 [[package]]
 name = "zestty"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "insta",
@@ -1855,7 +1855,7 @@ dependencies = [
 
 [[package]]
 name = "zestty-napi"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "napi",
  "napi-build",
@@ -1872,7 +1872,7 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zts-fmt"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "dprint-plugin-typescript",
