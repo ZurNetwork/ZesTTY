@@ -780,7 +780,7 @@ item 1 is THE headline break of this release, loudly documented.
 
 Language:
 
-- [ ] 1. **Readonly enum payloads + `mut` opt-out** — BREAKING. Variant
+- [x] 1. **Readonly enum payloads + `mut` opt-out** — SHIPPED (issue #54), BREAKING. Variant
       fields emit `readonly` in the generated tagged union;
       `mut field: T` opts out per field; `kind` is always readonly with
       no opt-out.
@@ -874,17 +874,47 @@ bidirectional TS↔zts nesting makes `embed` delegation impractical):
       (canonical constructs format, are idempotent, and every construct
       round-trips). CI clones the three forks as siblings.
 
-- [ ] 11. Release 0.4.0.
+- [x] 11. Release 0.4.0.
 
-Open inputs from Zuri before the affected items start: which editor
-exhibits the impl-block indent reset (nvim tree-sitter indent vs
-vscode onEnter rules) — fix rides this phase. (`fn`: DROPPED;
-`static_assert`: renamed `constrict`, paren-free; `not`: reserved —
-all decided 2026-08-07, see item 4b and the feature sections.)
+Open inputs from Zuri before the affected items start: RESOLVED — the
+impl-block indent reset was nvim (tree-sitter indent override, issue
+#57, shipped in this phase). (`fn`: DROPPED; `static_assert`: renamed
+`constrict`, paren-free; `not`: reserved — all decided 2026-08-07, see
+item 4b and the feature sections.)
 
 Standing rule (Zuri, 2026-08-07 — also in CLAUDE.md): every syntax
 change ships WITH its VS Code + nvim highlighting updates and its
 zts-fmt print-rule updates in ONE patch-version commit.
+
+### Post-0.4.0 — the DX & speed slate (0.4.x patches, Zuri-approved 2026-08-08)
+
+Ships as 0.4.x PATCHES ("keep it at 0.4 for now — none of these
+break"), each its own patch with the normal PR flow and tests. Order
+is load-bearing — no optimization lands without a before/after number
+from the harness:
+
+- [ ] 1. **Benchmark harness** — compile-time suite over the fixtures +
+      a synthetic large module, LS keystroke latency, zts-check
+      wall-clock. Lands FIRST; every later item cites its numbers.
+- [ ] 2. **Toolchain optimization round** — napi reusable sized worker
+      thread (replaces the per-call 64 MiB spawn; preserves the
+      stack-safety property), LS incremental/debounced recompile,
+      zts-check content-hash skip-cache, watch-mode per-file twin
+      regen.
+- [ ] 3. **LSP hover granularity** — sharper position mapping in match
+      arms + synthesized hovers for zts-only constructs, answered from
+      the enum decl.
+- [ ] 4. **LS semantic tokens** — real nvim highlighting; retires the
+      parity-rule nvim caveat (update the CLAUDE.md parity note when it
+      lands — confirm with Zuri then).
+
+Disposition (Zuri): toolchain speed first; generated-output
+optimizations explicitly deferred — do not re-litigate emitted shapes
+without profiling evidence. Parked: prebuilds/marketplace publishing.
+
+**0.5.0 is unassigned** — reserved for language-feature work. Shelf
+candidates: match guards (design round first), trait default methods,
+Option/null-unification (likely 1.0-territory breaking).
 
 ### Phase 3 — DX
 
