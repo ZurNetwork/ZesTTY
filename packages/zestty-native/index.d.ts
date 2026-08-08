@@ -23,3 +23,10 @@ export function compile(
   filename: string,
   options?: CompileOptions,
 ): CompileResult;
+
+/**
+ * Format zts source (Phase 7: zts-fmt via the dprint fork). Returns
+ * null when the input is already formatted.
+ * Throws an Error when the source does not parse.
+ */
+export function format(source: string, filename: string): string | null;
