@@ -86,3 +86,40 @@ test("zts-fmt: format() canonicalizes and is null when already formatted", () =>
   assert.match(once, /enum E \{\n  A \{ x: number \},\n\}/);
   assert.equal(format(once, "t.zts"), null);
 });
+
+test("zts-fmt: explicit options shape the output (issue #70)", () => {
+  const src = 'const x = "a";\nfunction f() {\nreturn x;\n}\n';
+  const out = format(src, "t.zts", { useTabs: true, singleQuote: true });
+  assert.match(out, /const x = 'a';/);
+  assert.match(out, /\treturn x;/);
+});
+
+test("zts-fmt: imports keep source order by default (issue #70)", () => {
+  const src =
+    'import { z, a } from "./b";\nimport "./a";\nexport const k = a + z;\n';
+  assert.equal(format(src, "t.zts"), null);
+  const sorted = format(src, "t.zts", { sortImports: true });
+  assert.match(sorted, /\{ a, z \}/);
+});
+
+test("zts-fmt: zts-fmt.json is discovered upward and fails closed (issue #70)", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } =
+    await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = mkdtempSync(join(tmpdir(), "zts-fmt-"));
+  try {
+    const nested = join(root, "src");
+    mkdirSync(nested);
+    writeFileSync(join(root, "zts-fmt.json"), '{ "singleQuote": true }');
+    const out = format('const x = "a";\n', join(nested, "t.zts"));
+    assert.match(out, /const x = 'a';/);
+    writeFileSync(join(root, "zts-fmt.json"), '{ "semi": false }');
+    assert.throws(
+      () => format('const x = "a";\n', join(nested, "t.zts")),
+      /unknown option "semi"/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
