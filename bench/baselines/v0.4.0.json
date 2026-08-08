@@ -1,0 +1,77 @@
+{
+  "meta": {
+    "sha": "754abae",
+    "smoke": false,
+    "date": "2026-08-08T21:21:07.228Z",
+    "node": "v25.6.0",
+    "cpu": "AMD Ryzen 9 5900X 12-Core Processor",
+    "config": {
+      "sections": 60,
+      "warmup": 3,
+      "iterations": 10,
+      "keystrokes": 50,
+      "completions": 25,
+      "files": 12,
+      "sectionsPerFile": 6,
+      "runs": 3
+    }
+  },
+  "results": {
+    "compile.fixtures_corpus": {
+      "n": 10,
+      "mean": 7.719,
+      "median": 7.663,
+      "p95": 8.15,
+      "min": 7.591,
+      "max": 8.15
+    },
+    "compile.synthetic_large": {
+      "n": 10,
+      "mean": 8.339,
+      "median": 8.272,
+      "p95": 8.825,
+      "min": 8.122,
+      "max": 8.825
+    },
+    "compile.small_file": {
+      "n": 50,
+      "mean": 0.121,
+      "median": 0.12,
+      "p95": 0.129,
+      "min": 0.116,
+      "max": 0.13
+    },
+    "format.synthetic_large": {
+      "n": 10,
+      "mean": 14.632,
+      "median": 14.668,
+      "p95": 15.389,
+      "min": 14.229,
+      "max": 15.389
+    },
+    "ls.keystroke_diagnostics": {
+      "n": 50,
+      "mean": 104.955,
+      "median": 100.372,
+      "p95": 126.674,
+      "min": 94.96,
+      "max": 205.043
+    },
+    "ls.completion": {
+      "n": 25,
+      "mean": 1.76,
+      "median": 0.828,
+      "p95": 1.396,
+      "min": 0.754,
+      "max": 22.713
+    },
+    "check.wallclock": {
+      "n": 3,
+      "mean": 127.13,
+      "median": 126.704,
+      "p95": 129.175,
+      "min": 125.512,
+      "max": 129.175
+    }
+  }
+}

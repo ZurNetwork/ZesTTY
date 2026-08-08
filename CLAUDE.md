@@ -17,6 +17,7 @@ Read README.md before doing anything — it is the authoritative spec: locked fe
 - `npm test` — all packages/* node:test suites (native binding, Vite plugin, Svelte preprocessor, @zestty/core).
 - `npm run build:native` — rebuild the napi binding after Rust changes (copies the .node into packages/zestty-native).
 - `cargo run -p zts-fmt -- [--check] [paths]` — format `.zts`/`.ztsx` (Phase 7; engine = the ../zts-fmt-forks/* dprint forks, line width 80; editors get it via the language-server's textDocument/formatting). Do NOT run it over tests/fixtures — several fixtures encode load-bearing layout (ASI).
+- `npm run bench` — the perf harness (`bench/`): compile suite, LS keystroke latency, zts-check wall-clock. `--smoke` for the fast gate, `--baseline bench/baselines/v0.4.0.json` for before/after. **No optimization lands without a before/after number from it.**
 - Fork tests: `cd ../swc_rustify && cargo test -p swc_ecma_parser --features typescript --lib zts::` (all zts parser tests live in `src/parser/zts.rs`).
 - Fork visit regeneration after ANY AST node change: `cd ../swc_rustify && cargo test -p generate-code test_ecmascript` (never hand-edit `generated.rs`).
 

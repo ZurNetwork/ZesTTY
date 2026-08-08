@@ -1,0 +1,13 @@
+{
+  "name": "@zestty/bench",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Benchmark harness for the zts toolchain: compile-time suite, LS keystroke latency, zts-check wall-clock. Every optimization in the 0.4.x speed slate cites before/after numbers from here.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@zestty/native": "^0.4.0"
+  }
+}
