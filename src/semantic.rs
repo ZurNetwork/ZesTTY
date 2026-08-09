@@ -17,6 +17,22 @@ use swc_ecma_visit::{Visit, VisitWith};
 /// real diagnostic instead.
 const MAX_EXPR_DEPTH: usize = 2048;
 
+/// Widest `lo..=hi` range arm zts will lower, in values (`hi - lo + 1`).
+///
+/// This is a DoS control, not a nicety, and it is enforced HERE — before
+/// lowering allocates anything. A range arm expands to a type alias with
+/// one literal member per value, so an unbounded range (`0..=2000000000`)
+/// is billions of AST nodes: the language server would OOM on a keystroke.
+/// Fail closed with a diagnostic naming the width instead.
+///
+/// 1024 covers every realistic literal-union vocabulary (the whole HTTP
+/// 4xx/5xx space is 100 values each) with two orders of magnitude spare.
+pub const MAX_RANGE_WIDTH: i64 = 1024;
+
+/// Bounds must be exactly representable as integers, so the enumeration
+/// `lo..=hi` is exact. `2^53 - 1`, JavaScript's `Number.MAX_SAFE_INTEGER`.
+const MAX_SAFE_INT: f64 = 9_007_199_254_740_991.0;
+
 /// Semantic checking failed; diagnostics were emitted via the handler.
 #[derive(Debug)]
 pub struct SemanticFailure {
@@ -181,10 +197,23 @@ impl Checker<'_> {
 
         // A match is either variant-mode or literal-mode, never mixed;
         // `_` is legal in both but must be the LAST arm and appear once.
+        // Range arms (`400..=499`) are literal-mode arms.
         let mut seen_variants: HashSet<&swc_atoms::Atom> = HashSet::new();
         let mut seen_lits: HashSet<String> = HashSet::new();
         let mut mode: Option<&'static str> = None;
         let mut wildcard_seen = false;
+
+        // Syntactic reachability over the integer number line (0.5.0). tsc
+        // is SILENT about a range arm shadowed by an earlier one — nothing
+        // in the generated TS is ill-typed — so this is the compile-error
+        // class ranges bring with them. Merged, sorted, disjoint intervals:
+        // `covered` holds earlier range arms AND earlier integer literal
+        // arms; `ranges` holds only the range arms, because a literal
+        // written before a range that contains it is the deliberate
+        // specific-case-first idiom (`404 => …, 400..=499 => …`) and must
+        // keep working.
+        let mut covered: Vec<(i64, i64)> = Vec::new();
+        let mut ranges: Vec<(i64, i64)> = Vec::new();
 
         for arm in &m.arms {
             if wildcard_seen {
@@ -255,6 +284,51 @@ impl Checker<'_> {
                     };
                     if !seen_lits.insert(key) {
                         self.err(l.span, "duplicate literal match arm");
+                        // Already reported; letting it fall through to the
+                        // interval check would blame an earlier RANGE for
+                        // what is plainly a duplicate literal.
+                    } else if let Some(v) = integer_literal_value(&l.lit, l.neg) {
+                        if let Some((a, b)) = interval_overlap(&ranges, v, v) {
+                            self.err(
+                                l.span,
+                                &format!(
+                                    "unreachable arm: `{v}` is already covered by the earlier \
+                                     range `{a}..={b}`"
+                                ),
+                            );
+                        }
+                        interval_insert(&mut covered, v, v);
+                    }
+                }
+                MatchPat::Range(r) => {
+                    match mode {
+                        Some("variant") => self.err(
+                            r.span,
+                            "cannot mix range arms and variant arms in one match (a range arm \
+                             matches a number, a variant arm matches a `kind` tag)",
+                        ),
+                        _ => mode = Some("lit"),
+                    }
+                    if let Some((lo, hi)) = self.check_range_bounds(r) {
+                        if let Some((a, b)) = interval_covering(&covered, lo, hi) {
+                            self.err(
+                                r.span,
+                                &format!(
+                                    "unreachable arm: the range `{lo}..={hi}` is already fully \
+                                     covered by earlier arms (`{a}..={b}`)"
+                                ),
+                            );
+                        } else if let Some((a, b)) = interval_overlap(&ranges, lo, hi) {
+                            self.err(
+                                r.span,
+                                &format!(
+                                    "overlapping range arms: `{lo}..={hi}` overlaps the earlier \
+                                     range `{a}..={b}`; range arms in one match must be disjoint"
+                                ),
+                            );
+                        }
+                        interval_insert(&mut covered, lo, hi);
+                        interval_insert(&mut ranges, lo, hi);
                     }
                 }
             }
@@ -265,6 +339,90 @@ impl Checker<'_> {
             };
             arm.body.visit_with(&mut suspender);
         }
+    }
+
+    /// Validates one `lo..=hi` range arm and returns its integer bounds.
+    ///
+    /// Everything here fails CLOSED: on any error the arm contributes no
+    /// interval and no lowering runs (the compile already failed), so a
+    /// pathological range can never reach the enumeration in `lower.rs`.
+    fn check_range_bounds(&mut self, r: &MatchRangePat) -> Option<(i64, i64)> {
+        let lo = self.range_bound(&r.lo, r.lo_neg, r.span)?;
+        let hi = self.range_bound(&r.hi, r.hi_neg, r.span)?;
+
+        if lo > hi {
+            self.err(
+                r.span,
+                &format!(
+                    "range lower bound `{lo}` is greater than its upper bound `{hi}`; zts ranges \
+                     are inclusive and must be written low-to-high (`{hi}..={lo}`)"
+                ),
+            );
+            return None;
+        }
+
+        // Cannot overflow: both bounds are safe integers, so the width fits
+        // in i64 with room to spare.
+        let width = hi - lo + 1;
+        if width > MAX_RANGE_WIDTH {
+            self.err(
+                r.span,
+                &format!(
+                    "range `{lo}..={hi}` spans {width} values, over the zts limit of \
+                     {MAX_RANGE_WIDTH}: a range arm expands to one literal type per value, so an \
+                     unbounded range would exhaust memory in the compiler and the editor. Match \
+                     on `number` with a `_` arm instead."
+                ),
+            );
+            return None;
+        }
+
+        Some((lo, hi))
+    }
+
+    /// One range bound: an INTEGER number literal, optionally negated.
+    fn range_bound(&mut self, n: &Number, neg: bool, span: Span) -> Option<i64> {
+        // Decimal-point and exponent forms are rejected on the literal's
+        // RAW TEXT, not its value: `4e2` is integral (400) but is not an
+        // integer literal, and letting it through would mean `4e2..=4e2`
+        // silently enumerates `400`. Radix-prefixed literals are integer
+        // literals by construction — and `0x1E` contains an `E` that is a
+        // hex digit, not an exponent, so they must be excluded from the
+        // text scan.
+        if let Some(raw) = n.raw.as_deref() {
+            let bytes = raw.as_bytes();
+            let radix_prefixed = bytes.len() > 1
+                && bytes[0] == b'0'
+                && matches!(bytes[1], b'x' | b'X' | b'o' | b'O' | b'b' | b'B');
+            if !radix_prefixed && raw.contains(['.', 'e', 'E']) {
+                self.err(
+                    span,
+                    &format!(
+                        "range bounds must be integer literals; `{raw}` is a decimal or exponent \
+                         form (a range enumerates whole numbers, so a fractional bound has no \
+                         meaning)"
+                    ),
+                );
+                return None;
+            }
+        }
+
+        if !n.value.is_finite() || n.value.fract() != 0.0 {
+            self.err(span, "range bounds must be integer literals");
+            return None;
+        }
+        if n.value.abs() > MAX_SAFE_INT {
+            self.err(
+                span,
+                "range bound is outside JavaScript's safe integer range, so the values it spans \
+                 cannot be enumerated exactly",
+            );
+            return None;
+        }
+
+        // `-0` and `0` are the same value in JS; `-(0.0) as i64` is 0.
+        let v = if neg { -n.value } else { n.value };
+        Some(v as i64)
     }
 
     fn check_binding(&mut self, binding: &ObjectPat) {
@@ -302,6 +460,59 @@ impl Checker<'_> {
             }
         }
     }
+}
+
+/// The integer value of a numeric literal arm pattern, if it has one.
+/// `-0` collapses to `0` (they are `===` in JS — the same collapse the
+/// duplicate-arm key does).
+fn integer_literal_value(lit: &Lit, neg: bool) -> Option<i64> {
+    let Lit::Num(n) = lit else { return None };
+    let v = if neg { -n.value } else { n.value };
+    if !v.is_finite() || v.fract() != 0.0 || v.abs() > MAX_SAFE_INT {
+        return None;
+    }
+    Some(v as i64)
+}
+
+// Merged, sorted, disjoint, non-adjacent integer intervals. Adjacency
+// counts as overlap for merging ([1,2] + [3,4] = [1,4]) because the values
+// are integers: nothing can sit between them.
+
+/// The single merged interval that fully contains `lo..=hi`, if any. Valid
+/// because the list is merged: a covered range lies inside ONE interval.
+fn interval_covering(ivals: &[(i64, i64)], lo: i64, hi: i64) -> Option<(i64, i64)> {
+    ivals.iter().copied().find(|&(a, b)| a <= lo && hi <= b)
+}
+
+/// The first merged interval that shares any value with `lo..=hi`.
+fn interval_overlap(ivals: &[(i64, i64)], lo: i64, hi: i64) -> Option<(i64, i64)> {
+    ivals.iter().copied().find(|&(a, b)| a <= hi && lo <= b)
+}
+
+/// Insert `lo..=hi`, merging into any interval it touches. Linear, and the
+/// list stays sorted.
+fn interval_insert(ivals: &mut Vec<(i64, i64)>, lo: i64, hi: i64) {
+    let (mut lo, mut hi) = (lo, hi);
+    let mut out: Vec<(i64, i64)> = Vec::with_capacity(ivals.len() + 1);
+    let mut placed = false;
+    for &(a, b) in ivals.iter() {
+        if b.saturating_add(1) < lo {
+            out.push((a, b));
+        } else if hi.saturating_add(1) < a {
+            if !placed {
+                out.push((lo, hi));
+                placed = true;
+            }
+            out.push((a, b));
+        } else {
+            lo = lo.min(a);
+            hi = hi.max(b);
+        }
+    }
+    if !placed {
+        out.push((lo, hi));
+    }
+    *ivals = out;
 }
 
 /// Return-shape of the nearest enclosing function, for the `?` operator.
