@@ -1480,8 +1480,16 @@ impl Visit for Checker<'_> {
                     }
                     format!("n:{}", v + 0.0)
                 }
-                // The parser admits string and number literals only.
-                other => format!("x:{:?}", other.span()),
+                // The parser admits string and number literals only, but
+                // ZtsUnionDecl is public API — defend here too, or a
+                // hand-built member would reach lowering unchecked.
+                other => {
+                    self.err(
+                        m.span,
+                        "zts `union` members must be string or number literals",
+                    );
+                    format!("x:{:?}", other.span())
+                }
             };
             if !seen.insert(key) {
                 self.err(m.span, "duplicate union member");

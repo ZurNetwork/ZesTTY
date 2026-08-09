@@ -565,13 +565,17 @@ fn lower_union(u: &ZtsUnionDecl, impls: Vec<ZtsImplDecl>) -> (Decl, Decl) {
             }),
             (Lit::Num(n), false) => TsLit::Number(n.clone()),
             (Lit::Str(s), _) => TsLit::Str(s.clone()),
-            // Unreachable via the parser (string/number only); a non-literal
-            // member would have been rejected long before lowering.
-            (other, _) => TsLit::Str(Str {
-                span: other.span(),
-                value: atom!("").into(),
-                raw: None,
-            }),
+            // Unreachable through the parser (string and number only) and
+            // rejected by the semantic pass, but ZtsUnionDecl is public
+            // API. Fail CLOSED with `never`: the vocabulary type then has
+            // an uninhabited member and tsc rejects the emitted `values`
+            // entry, instead of us inventing a literal nobody wrote.
+            _ => {
+                return Box::new(TsType::TsKeywordType(TsKeywordType {
+                    span: m.span,
+                    kind: TsKeywordTypeKind::TsNeverKeyword,
+                }));
+            }
         };
         Box::new(TsType::TsLitType(TsLitType { span: m.span, lit }))
     };
