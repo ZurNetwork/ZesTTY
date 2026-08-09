@@ -1455,9 +1455,35 @@ impl Visit for Checker<'_> {
         if u.members.is_empty() {
             self.err(u.span, "union must have at least one member");
         }
-        let mut seen: HashSet<&swc_atoms::Wtf8Atom> = HashSet::with_capacity(u.members.len());
+        // Span-free identity, exactly like the duplicate-match-arm key:
+        // `Debug` on a literal embeds spans, which would make every member
+        // unique. Numbers key on the VALUE, so `-0`/`0` and `1`/`1.0` are
+        // the same member — as they are to TypeScript, which would emit a
+        // silently-deduplicated literal union type otherwise.
+        let mut seen: HashSet<String> = HashSet::with_capacity(u.members.len());
         for m in &u.members {
-            if !seen.insert(&m.value) {
+            let key = match &m.lit {
+                Lit::Str(s) => format!("s:{:?}", s.value),
+                Lit::Num(n) => {
+                    let v = if m.neg { -n.value } else { n.value };
+                    // Fractional members are rejected in v1: the guard and
+                    // the `values` tuple work either way, but a float
+                    // vocabulary is almost always a modelling mistake, and
+                    // widening later is cheap while narrowing is breaking.
+                    if !v.is_finite() || v.fract() != 0.0 {
+                        self.err(
+                            m.span,
+                            "zts `union` members must be whole numbers in v1; use a plain type \
+                             alias for a fractional vocabulary",
+                        );
+                        continue;
+                    }
+                    format!("n:{}", v + 0.0)
+                }
+                // The parser admits string and number literals only.
+                other => format!("x:{:?}", other.span()),
+            };
+            if !seen.insert(key) {
                 self.err(m.span, "duplicate union member");
             }
         }
