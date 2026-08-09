@@ -676,11 +676,11 @@ impl Coverage {
 
         let (mut start, mut end) = (arm.lo, arm.hi);
         // Absorb a left neighbour that touches (adjacent counts).
-        if let Some((&a, &b)) = self.merged.range(..start).next_back() {
-            if b.saturating_add(1) >= start {
-                start = a;
-                end = end.max(b);
-            }
+        if let Some((&a, &b)) = self.merged.range(..start).next_back()
+            && b.saturating_add(1) >= start
+        {
+            start = a;
+            end = end.max(b);
         }
         // Absorb every interval starting inside (or adjacent to) the run.
         // Only the LAST removal can extend `end`, and the next interval
