@@ -172,6 +172,33 @@ export type __ztsEqual<X, Y> =
 export type __ztsNot<B extends boolean> = B extends true ? false : true;
 
 /**
+ * The range-arm predicate the zts compiler references for `lo..=hi` match
+ * patterns (0.5.0). Not for application code.
+ *
+ * `400..=499 => …` lowers to
+ * `if (__ztsInRange<__ztsRange0>(__m, 400, 499)) { … }`, where
+ * `__ztsRange0` is a hoisted, fully erased `400 | 401 | … | 499`. A type
+ * PREDICATE narrows without comparing, so the arm cannot produce the
+ * TS2678/TS2367 that a `switch`/`===` expansion would emit for every
+ * enumerated value outside the scrutinee's type — and the negative branch
+ * still removes the covered members, so the exhaustiveness keystone
+ * discharges over a closed numeric literal union.
+ *
+ * Two details are load-bearing:
+ * - the parameter is `unknown`, not `number`: the scrutinee may be a mixed
+ *   union (`42 | "unknown"`), and a `number` parameter would reject it;
+ * - the integer gate is `% 1 === 0`, not `Number.isInteger`: the latter is
+ *   ES2015 and would raise the emitted-TS lib floor (same reasoning as
+ *   `indexOf` over `includes` in the `union` guard).
+ */
+export const __ztsInRange = <T extends number>(
+  __v: unknown,
+  __lo: number,
+  __hi: number,
+): __v is T =>
+  typeof __v === "number" && __v % 1 === 0 && __v >= __lo && __v <= __hi;
+
+/**
  * The exhaustiveness keystone the zts compiler references in
  * committed-twins mode (`import { __ztsAbsurd } from "@zestty/core"`).
  * Not for application code: if this ever throws, a `match` was compiled
