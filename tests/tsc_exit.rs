@@ -663,6 +663,102 @@ fn union_guard_is_es5_clean() {
 }
 
 #[test]
+fn numeric_union_passes_tsc_and_guard_narrows() {
+    // 0.5.0 numeric members: `has` takes a `number` and narrows a raw wire
+    // value into the vocabulary, the closed side stays exhaustively
+    // matchable, and impls still merge into the same factory const.
+    let (ts_path, _) = compile_to("union_numeric.zts", "exit_union_numeric.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected numeric union output:\n{text}");
+
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("has: (__ztsRaw: number): __ztsRaw is HttpStatus"),
+        "an all-numeric union's guard must take a number:\n{code}"
+    );
+    // The ES5-clean guard shape and the cast-the-ARGUMENT discipline are
+    // unchanged: a receiver cast would need parens the fixer strips.
+    assert!(
+        code.contains("HttpStatus.values.indexOf(__ztsRaw as HttpStatus) !== -1"),
+        "guard shape must be unchanged for numeric members:\n{code}"
+    );
+    let (ok, text) = tsc_with(&ts_path, &["--strict", "--target", "es2015"]);
+    assert!(
+        ok,
+        "numeric union guard must typecheck at --target es2015:\n{text}"
+    );
+}
+
+#[test]
+fn numeric_union_guard_rejects_a_string() {
+    // The guard's parameter type comes from the member SHAPES: an
+    // all-numeric vocabulary must not silently accept a string.
+    let (ts_path, _) = compile_to("union_numeric.zts", "exit_union_numeric_arg.ts");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    let bad = format!("{code}\nHttpStatus.has(\"404\");\n");
+    let bad_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("exit_union_numeric_bad.ts");
+    std::fs::write(&bad_path, bad).unwrap();
+    let (ok, text) = tsc(&bad_path);
+    assert!(!ok, "a numeric union's has() must reject a string");
+    assert!(text.contains("TS2345"), "unexpected failure:\n{text}");
+}
+
+#[test]
+fn mixed_union_passes_tsc_and_guard_takes_both() {
+    let (ts_path, _) = compile_to("union_mixed.zts", "exit_union_mixed.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected mixed union output:\n{text}");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("has: (__ztsRaw: string | number): __ztsRaw is Ans"),
+        "a mixed union's guard must take both primitives:\n{code}"
+    );
+}
+
+#[test]
+fn string_union_output_is_byte_identical() {
+    // The 0.5.0 member-shape change must not move a single byte for the
+    // vocabularies that already existed. (The snapshots pin this too; this
+    // one says it out loud where a reviewer will look.)
+    let (ts_path, _) = compile_to("union_basic.zts", "exit_union_unchanged.ts");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("has: (__ztsRaw: string): __ztsRaw is DeleteOutcome"),
+        "an all-string union's guard must still take a string:\n{code}"
+    );
+}
+
+#[test]
+fn numeric_union_and_ranges_compose() {
+    // THE COMPOSITION KEYSTONE: wire guard -> closed numeric vocabulary ->
+    // exhaustive RANGED match, all proven by tsc with no `_` anywhere.
+    let (ts_path, _) = compile_to("union_range_composition.zts", "exit_union_range.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected the union+range composition:\n{text}");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("__ztsAbsurd"),
+        "the composition must keep the keystone live:\n{code}"
+    );
+
+    // Delete the 3xx range arm: the members it covered must survive to the
+    // keystone and be named.
+    let broken = code.replace(
+        "if (__ztsInRange<__ztsRange1>(__m, 300, 399)) {",
+        "if (false as boolean) {",
+    );
+    assert_ne!(code, broken, "fixture drifted; update the arm surgery");
+    let broken_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("exit_union_range_broken.ts");
+    std::fs::write(&broken_path, broken).unwrap();
+    let (ok, text) = tsc(&broken_path);
+    assert!(!ok, "deleting a range arm must break exhaustiveness");
+    assert!(
+        text.contains("TS2345") && text.contains("301"),
+        "tsc must name the uncovered member:\n{text}"
+    );
+}
+
+#[test]
 fn union_missing_arm_fails_tsc_naming_the_literal() {
     let (ts_path, _) = compile_to("union_missing_arm.zts", "exit_union_missing.ts");
     let (ok, text) = tsc_with(&ts_path, &[]);

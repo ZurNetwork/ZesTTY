@@ -1,0 +1,72 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/union_numeric.zts
+---
+import { __ztsAbsurd } from "@zestty/core";
+// Closed NUMERIC vocabulary (0.5.0): the same type + values + guard the
+// string form gives, with `has` taking a `number`. This is what makes the
+// range-pattern payload reachable — a closed numeric literal union is
+// something zts could not declare before.
+type HttpStatus = 200 | 201 | 404 | 500;
+const HttpStatus = {
+    values: [
+        200,
+        201,
+        404,
+        500
+    ] as const,
+    has: (__ztsRaw: number): __ztsRaw is HttpStatus =>HttpStatus.values.indexOf(__ztsRaw as HttpStatus) !== -1,
+    fmt (self: HttpStatus): string {
+        return `HTTP ${self}`;
+    }
+} satisfies {
+    [key: string]: unknown;
+} & Display<HttpStatus>;
+// Negative members, and the single-member degenerate case.
+type Offset = -1 | 0 | 1;
+const Offset = {
+    values: [
+        -1,
+        0,
+        1
+    ] as const,
+    has: (__ztsRaw: number): __ztsRaw is Offset =>Offset.values.indexOf(__ztsRaw as Offset) !== -1
+};
+type Only = 7;
+const Only = {
+    values: [
+        7
+    ] as const,
+    has: (__ztsRaw: number): __ztsRaw is Only =>Only.values.indexOf(__ztsRaw as Only) !== -1
+};
+// The wire-normalizer, unchanged in shape: has() narrows a raw number to
+// the vocabulary type, so the fail-closed mapping is one expression.
+export function toHttpStatus(raw: number): HttpStatus {
+    return HttpStatus.has(raw) ? raw : 500;
+}
+// The closed side stays exhaustively matchable — literal arms here, the
+// composition fixture covers range arms.
+export function describe(s: HttpStatus): string {
+    return ((__m)=>{
+        if (__m === 200) {
+            return "ok";
+        }
+        if (__m === 201) {
+            return "created";
+        }
+        if (__m === 404) {
+            return "not found";
+        }
+        if (__m === 500) {
+            return "server error";
+        }
+        return __ztsAbsurd(__m);
+    })(s);
+}
+// Impls keep working on a numeric union (Phase 7 item 5): the methods
+// merge into the same factory const, next to `values` and `has`.
+interface Display<Self> {
+    fmt(self: Self): string;
+}
+console.log(HttpStatus.values.length, HttpStatus.fmt(toHttpStatus(404)), Offset.has(-1), Only.values[0], describe(200));

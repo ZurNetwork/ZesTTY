@@ -1,0 +1,22 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_union_dup_numeric.zts
+---
+error: duplicate union member
+ --> tests/fixtures/errors/err_union_dup_numeric.zts:3:15
+  |
+3 | union A = 0 | -0;
+  |               ^^
+
+error: duplicate union member
+ --> tests/fixtures/errors/err_union_dup_numeric.zts:4:15
+  |
+4 | union B = 1 | 1.0;
+  |               ^^^
+
+error: duplicate union member
+ --> tests/fixtures/errors/err_union_dup_numeric.zts:5:23
+  |
+5 | union C = 200 | 404 | 200;
+  |                       ^^^

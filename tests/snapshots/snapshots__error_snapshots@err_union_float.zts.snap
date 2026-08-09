@@ -1,0 +1,16 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_union_float.zts
+---
+error: zts `union` members must be whole numbers in v1; use a plain type alias for a fractional vocabulary
+ --> tests/fixtures/errors/err_union_float.zts:1:15
+  |
+1 | union Ratio = 0.5 | 1.5;
+  |               ^^^
+
+error: zts `union` members must be whole numbers in v1; use a plain type alias for a fractional vocabulary
+ --> tests/fixtures/errors/err_union_float.zts:1:21
+  |
+1 | union Ratio = 0.5 | 1.5;
+  |                     ^^^

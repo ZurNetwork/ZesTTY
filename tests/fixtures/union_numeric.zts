@@ -1,0 +1,46 @@
+// Closed NUMERIC vocabulary (0.5.0): the same type + values + guard the
+// string form gives, with `has` taking a `number`. This is what makes the
+// range-pattern payload reachable — a closed numeric literal union is
+// something zts could not declare before.
+union HttpStatus = 200 | 201 | 404 | 500;
+
+// The wire-normalizer, unchanged in shape: has() narrows a raw number to
+// the vocabulary type, so the fail-closed mapping is one expression.
+export function toHttpStatus(raw: number): HttpStatus {
+  return HttpStatus.has(raw) ? raw : 500;
+}
+
+// The closed side stays exhaustively matchable — literal arms here, the
+// composition fixture covers range arms.
+export function describe(s: HttpStatus): string {
+  return match (s) {
+    200 => "ok",
+    201 => "created",
+    404 => "not found",
+    500 => "server error",
+  };
+}
+
+// Negative members, and the single-member degenerate case.
+union Offset = -1 | 0 | 1;
+union Only = 7;
+
+// Impls keep working on a numeric union (Phase 7 item 5): the methods
+// merge into the same factory const, next to `values` and `has`.
+interface Display<Self> {
+  fmt(self: Self): string;
+}
+
+impl Display for HttpStatus {
+  fmt(self): string {
+    return `HTTP ${self}`;
+  }
+}
+
+console.log(
+  HttpStatus.values.length,
+  HttpStatus.fmt(toHttpStatus(404)),
+  Offset.has(-1),
+  Only.values[0],
+  describe(200),
+);
