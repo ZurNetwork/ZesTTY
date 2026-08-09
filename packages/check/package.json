@@ -1,6 +1,6 @@
 {
   "name": "@zestty/check",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "zts-check: the CI type gate for zts. Compiles .zts/.ztsx (and <script lang=\"zts\"> blocks) into shadow twins, runs tsc --noEmit, and remaps every diagnostic back to the original zts source through the sourcemaps.",
   "type": "module",
   "bin": {
@@ -15,11 +15,11 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@zestty/native": "^0.4.0",
+    "@zestty/native": "^0.5.0",
     "source-map-js": "^1.2.0"
   },
   "peerDependencies": {
-    "@zestty/core": ">=0.4.0"
+    "@zestty/core": ">=0.5.0"
   },
   "devDependencies": {
     "svelte": "^5.56.8",

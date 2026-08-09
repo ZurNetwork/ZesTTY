@@ -942,7 +942,7 @@ without profiling evidence. Parked: prebuilds/marketplace publishing.
 Design round complete (issue #73 has the full measured record; all
 claims verified against tsc 5.9.3/6.0.3/7.0.2). Scope:
 
-- [ ] 1. **Range patterns in match**: `400..=499 =>` — inclusive only
+- [x] 1. **Range patterns in match** — SHIPPED (#76): `400..=499 =>` — inclusive only
       (exclusive `..` REJECTED: making `..` a token steals
       `4..toString()`, a superset break — recorded like `not`/
       `constrict`); integer literal bounds (± ok, `lo <= hi`, no
@@ -988,14 +988,14 @@ claims verified against tsc 5.9.3/6.0.3/7.0.2). Scope:
       parsing is outside the rewind path. The pattern is a REAL AST
       node (`MatchPat::Range` — the `not` lesson), with print rule +
       TextMate scope + nvim disposition per the parity rule.
-- [ ] 2. **Numeric and mixed union members**: `union HttpStatus =
+- [x] 2. **Numeric and mixed union members** — SHIPPED (#76): `union HttpStatus =
 200 | 404 | 500` (and mixed string/number) — `has(__ztsRaw:
 number | string)` guard per member set; the enabling companion:
       the range-pattern safety payload only materializes over closed
       numeric literal unions, which zts cannot declare today
       (feature 7 is string-only). Composition measured end-to-end in
       the round (wire guard → exhaustive ranged match).
-- [ ] 3. Release 0.5.0.
+- [x] 3. Release 0.5.0.
 
 HONEST SAFETY STORY (recorded, unembellished): range patterns do not
 eliminate a runtime bug class; they remove the main practical reason
