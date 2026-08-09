@@ -85,8 +85,11 @@ use swc_ecma_visit::{VisitMut, VisitMutWith, visit_mut_pass};
 pub fn lower(preamble_import: bool) -> impl Pass {
     visit_mut_pass(Lower {
         absurd: None,
+        in_range: None,
         constrict: None,
         constrict_count: 0,
+        range_aliases: Vec::new(),
+        range_count: 0,
         preamble_import,
     })
 }
@@ -95,6 +98,17 @@ struct Lower {
     /// The `__ztsAbsurd` identifier, created on first use; its presence
     /// also signals that the helper declaration must be injected.
     absurd: Option<Ident>,
+    /// The `__ztsInRange` identifier, created on the first `lo..=hi` range
+    /// arm; same injection story as `absurd` (import in preamble mode, an
+    /// inline const otherwise).
+    in_range: Option<Ident>,
+    /// Hoisted `type __ztsRangeN = lo | … | hi;` aliases — one per range
+    /// arm, fully erased, emitted next to the other generated preamble.
+    range_aliases: Vec<Stmt>,
+    /// Per-module range counter: like `constrict`, the alias names must
+    /// self-uniquify, because hygiene is not TS-type-aware and will NOT
+    /// rename duplicate TYPE aliases.
+    range_count: usize,
     /// The constrict type helpers (`__ztsExpect`, `__ztsEqual`,
     /// `__ztsNot`), created on first `constrict` (Phase 7); their
     /// presence signals the type-only import (or inline aliases) must
@@ -136,6 +150,12 @@ impl Lower {
     fn absurd_ident(&mut self) -> Ident {
         self.absurd
             .get_or_insert_with(|| private_ident!("__ztsAbsurd"))
+            .clone()
+    }
+
+    fn in_range_ident(&mut self) -> Ident {
+        self.in_range
+            .get_or_insert_with(|| private_ident!("__ztsInRange"))
             .clone()
     }
 
@@ -267,6 +287,9 @@ impl Lower {
                 }
                 MatchPat::Lit(l) => {
                     stmts.push(self.lower_lit_arm(&m_ident, arm_span, l, *body));
+                }
+                MatchPat::Range(r) => {
+                    stmts.push(self.lower_range_arm(&m_ident, arm_span, r, *body));
                 }
             }
         }
@@ -440,6 +463,187 @@ impl Lower {
         })
     }
 
+    /// One range arm:
+    /// `if (__ztsInRange<__ztsRangeN>(__m, lo, hi)) { return body; }`
+    ///
+    /// Shape 5 (measured against tsc 5.9 / 6.0 / 7.0 in the design round;
+    /// do not substitute another shape). The three rejected alternatives
+    /// and why:
+    /// - relational comparisons (`__m >= lo && __m <= hi`) narrow NOTHING
+    ///   anywhere in TypeScript — it is a guard by another name;
+    /// - expanding to `switch` fallthrough or an `===` chain DOES narrow,
+    ///   but tsc then emits TS2678/TS2367 for every enumerated value that
+    ///   is not in the scrutinee's type, and a syntax-only compiler cannot
+    ///   know which those are;
+    /// - a type-level `Enumerate<lo, hi>` hits TS2589 above an ABSOLUTE
+    ///   bound near 1000 (`Enumerate<4000, 4010>` fails at width 10), and
+    ///   HTTP 4xx is already there.
+    ///
+    /// A type PREDICATE narrows without comparing, so none of that can
+    /// happen: the true branch gets `__ztsRangeN & typeof __m`, the false
+    /// branch has the covered members removed, and an exhaustive ranged
+    /// match over a closed numeric literal union still runs `__m` to
+    /// `never` for the keystone. The tail is UNCHANGED — whether a `_` is
+    /// required is tsc's verdict, never the compiler's.
+    ///
+    /// `__ztsRangeN` is hoisted and fully erased; the `if` carries the
+    /// arm's ORIGINAL span, and the bound literals are the ones the author
+    /// wrote (raw text and all), so `0x1F..=0x2F` stays hexadecimal.
+    fn lower_range_arm(
+        &mut self,
+        m_ident: &Ident,
+        span: Span,
+        pat: MatchRangePat,
+        body: Expr,
+    ) -> Stmt {
+        let MatchRangePat {
+            span: pat_span,
+            lo,
+            lo_neg,
+            hi,
+            hi_neg,
+        } = pat;
+
+        let alias = self.range_alias(pat_span, &lo, lo_neg, &hi, hi_neg);
+        let in_range = self.in_range_ident();
+
+        let bound = |n: Number, neg: bool| -> Box<Expr> {
+            let lit = Expr::Lit(Lit::Num(n));
+            Box::new(if neg {
+                Expr::Unary(UnaryExpr {
+                    span: pat_span,
+                    op: UnaryOp::Minus,
+                    arg: Box::new(lit),
+                })
+            } else {
+                lit
+            })
+        };
+
+        // __ztsInRange<__ztsRangeN>(__m, lo, hi)
+        let test = Expr::Call(CallExpr {
+            span: pat_span,
+            ctxt: SyntaxContext::empty(),
+            callee: Callee::Expr(Box::new(Expr::Ident(Ident {
+                span: pat_span,
+                ..in_range
+            }))),
+            args: vec![
+                ExprOrSpread {
+                    spread: None,
+                    expr: Box::new(Expr::Ident(Ident {
+                        span: pat_span,
+                        ..m_ident.clone()
+                    })),
+                },
+                ExprOrSpread {
+                    spread: None,
+                    expr: bound(lo, lo_neg),
+                },
+                ExprOrSpread {
+                    spread: None,
+                    expr: bound(hi, hi_neg),
+                },
+            ],
+            type_args: Some(Box::new(TsTypeParamInstantiation {
+                span: pat_span,
+                params: vec![Box::new(TsType::TsTypeRef(TsTypeRef {
+                    span: pat_span,
+                    type_name: TsEntityName::Ident(alias),
+                    type_params: None,
+                }))],
+            })),
+        });
+
+        let mut cons_stmts: Vec<Stmt> = Vec::with_capacity(1);
+        push_body_as_return(&mut cons_stmts, body);
+
+        Stmt::If(IfStmt {
+            span,
+            test: Box::new(test),
+            cons: Box::new(Stmt::Block(BlockStmt {
+                span,
+                ctxt: SyntaxContext::empty(),
+                stmts: cons_stmts,
+            })),
+            alt: None,
+        })
+    }
+
+    /// Hoists `type __ztsRangeN = lo | lo+1 | … | hi;` and returns its
+    /// identifier.
+    ///
+    /// Defense in depth: the semantic pass has already rejected non-integer
+    /// bounds, `lo > hi`, and widths over `MAX_RANGE_WIDTH` — but
+    /// `MatchRangePat` is public API (napi, tests), and an embedder that
+    /// skips the semantic pass must not be able to make the compiler
+    /// allocate billions of nodes. Anything out of contract collapses to
+    /// `never`, which fails closed: the arm can then never match.
+    fn range_alias(
+        &mut self,
+        span: Span,
+        lo: &Number,
+        lo_neg: bool,
+        hi: &Number,
+        hi_neg: bool,
+    ) -> Ident {
+        let value = |n: &Number, neg: bool| if neg { -n.value } else { n.value };
+        let (lo_v, hi_v) = (value(lo, lo_neg), value(hi, hi_neg));
+
+        let members: Vec<Box<TsType>> = if lo_v.is_finite()
+            && hi_v.is_finite()
+            && lo_v.fract() == 0.0
+            && hi_v.fract() == 0.0
+            && lo_v <= hi_v
+            && hi_v - lo_v < crate::semantic::MAX_RANGE_WIDTH as f64
+        {
+            let (lo_i, hi_i) = (lo_v as i64, hi_v as i64);
+            (lo_i..=hi_i)
+                .map(|v| {
+                    Box::new(TsType::TsLitType(TsLitType {
+                        span,
+                        lit: TsLit::Number(Number {
+                            span,
+                            value: v as f64,
+                            raw: None,
+                        }),
+                    }))
+                })
+                .collect()
+        } else {
+            vec![Box::new(TsType::TsKeywordType(TsKeywordType {
+                span,
+                kind: TsKeywordTypeKind::TsNeverKeyword,
+            }))]
+        };
+
+        let n = self.range_count;
+        self.range_count += 1;
+        let mut alias_id = private_ident!(format!("__ztsRange{n}"));
+        alias_id.span = span;
+
+        let type_ann = match members.len() {
+            1 => members.into_iter().next().expect("one member"),
+            _ => Box::new(TsType::TsUnionOrIntersectionType(
+                TsUnionOrIntersectionType::TsUnionType(TsUnionType {
+                    span,
+                    types: members,
+                }),
+            )),
+        };
+
+        self.range_aliases
+            .push(Stmt::Decl(Decl::TsTypeAlias(Box::new(TsTypeAliasDecl {
+                span,
+                declare: false,
+                id: alias_id.clone(),
+                type_params: None,
+                type_ann,
+            }))));
+
+        alias_id
+    }
+
     /// ```ts
     /// function __ztsAbsurd(x: never): never {
     ///     const e: any = new globalThis.Error("zts: non-exhaustive match");
@@ -556,6 +760,166 @@ impl Lower {
                 return_type: Some(keyword_ann(TsKeywordTypeKind::TsNeverKeyword)),
             }),
         }))
+    }
+
+    /// The inline (no @zestty/core) form of the range predicate:
+    ///
+    /// ```ts
+    /// const __ztsInRange = <T extends number>(
+    ///     __ztsV: unknown, __ztsLo: number, __ztsHi: number,
+    /// ): __ztsV is T =>
+    ///     typeof __ztsV === "number" && __ztsV % 1 === 0
+    ///         && __ztsV >= __ztsLo && __ztsV <= __ztsHi;
+    /// ```
+    ///
+    /// Byte-for-byte the same behaviour as the @zestty/core export, and
+    /// deliberately the same two load-bearing details: the value parameter
+    /// is `unknown` (a mixed scrutinee union must be able to reach it), and
+    /// the integer gate is `% 1 === 0`, not `Number.isInteger`, which is
+    /// ES2015 and would raise the emitted-TS lib floor.
+    ///
+    /// The parameter names carry the `__zts` prefix rather than the core
+    /// package's plainer `__v`: user identifiers starting with `__zts` are
+    /// rejected by the semantic pass, so nothing can collide and hygiene
+    /// never has to rename them — which matters here because the return
+    /// type is a type PREDICATE naming the first parameter, and hygiene is
+    /// not TS-type-aware.
+    fn in_range_decl(&self, in_range: Ident) -> Stmt {
+        let t = private_ident!("T");
+        let v = private_ident!("__ztsV");
+        let lo = private_ident!("__ztsLo");
+        let hi = private_ident!("__ztsHi");
+
+        let keyword = |kind: TsKeywordTypeKind| {
+            Box::new(TsType::TsKeywordType(TsKeywordType {
+                span: DUMMY_SP,
+                kind,
+            }))
+        };
+        let ann = |ty: Box<TsType>| {
+            Box::new(TsTypeAnn {
+                span: DUMMY_SP,
+                type_ann: ty,
+            })
+        };
+        let param = |id: &Ident, ty: Box<TsType>| {
+            Pat::Ident(BindingIdent {
+                id: id.clone(),
+                type_ann: Some(ann(ty)),
+            })
+        };
+        let v_ref = || Box::new(Expr::Ident(v.clone()));
+        let and = |left: Expr, right: Expr| {
+            Expr::Bin(BinExpr {
+                span: DUMMY_SP,
+                op: op!("&&"),
+                left: Box::new(left),
+                right: Box::new(right),
+            })
+        };
+        let num = |value: f64| {
+            Box::new(Expr::Lit(Lit::Num(Number {
+                span: DUMMY_SP,
+                value,
+                raw: None,
+            })))
+        };
+
+        // typeof __ztsV === "number"
+        let typeof_check = Expr::Bin(BinExpr {
+            span: DUMMY_SP,
+            op: op!("==="),
+            left: Box::new(Expr::Unary(UnaryExpr {
+                span: DUMMY_SP,
+                op: op!("typeof"),
+                arg: v_ref(),
+            })),
+            right: Box::new(Expr::Lit(Lit::Str(Str {
+                span: DUMMY_SP,
+                value: atom!("number").into(),
+                raw: None,
+            }))),
+        });
+        // __ztsV % 1 === 0
+        let integer_check = Expr::Bin(BinExpr {
+            span: DUMMY_SP,
+            op: op!("==="),
+            left: Box::new(Expr::Bin(BinExpr {
+                span: DUMMY_SP,
+                op: op!("%"),
+                left: v_ref(),
+                right: num(1.0),
+            })),
+            right: num(0.0),
+        });
+        let bound_check = |op: BinaryOp, bound: &Ident| {
+            Expr::Bin(BinExpr {
+                span: DUMMY_SP,
+                op,
+                left: v_ref(),
+                right: Box::new(Expr::Ident(bound.clone())),
+            })
+        };
+
+        let body = and(
+            and(
+                and(typeof_check, integer_check),
+                bound_check(op!(">="), &lo),
+            ),
+            bound_check(op!("<="), &hi),
+        );
+
+        let arrow = ArrowExpr {
+            span: DUMMY_SP,
+            ctxt: SyntaxContext::empty(),
+            params: vec![
+                param(&v, keyword(TsKeywordTypeKind::TsUnknownKeyword)),
+                param(&lo, keyword(TsKeywordTypeKind::TsNumberKeyword)),
+                param(&hi, keyword(TsKeywordTypeKind::TsNumberKeyword)),
+            ],
+            body: Box::new(BlockStmtOrExpr::Expr(Box::new(body))),
+            is_async: false,
+            is_generator: false,
+            // `<T extends number>`, never a bare `<T>`: the constraint is
+            // what keeps the arrow unambiguous in a `.tsx` twin, where a
+            // bare type parameter list would parse as a JSX element.
+            type_params: Some(Box::new(TsTypeParamDecl {
+                span: DUMMY_SP,
+                params: vec![TsTypeParam {
+                    span: DUMMY_SP,
+                    name: t.clone(),
+                    is_in: false,
+                    is_out: false,
+                    is_const: false,
+                    constraint: Some(keyword(TsKeywordTypeKind::TsNumberKeyword)),
+                    default: None,
+                }],
+            })),
+            return_type: Some(ann(Box::new(TsType::TsTypePredicate(TsTypePredicate {
+                span: DUMMY_SP,
+                asserts: false,
+                param_name: TsThisTypeOrIdent::Ident(v.clone()),
+                type_ann: Some(ann(Box::new(TsType::TsTypeRef(TsTypeRef {
+                    span: DUMMY_SP,
+                    type_name: TsEntityName::Ident(t),
+                    type_params: None,
+                })))),
+            })))),
+        };
+
+        VarDecl {
+            span: DUMMY_SP,
+            ctxt: SyntaxContext::empty(),
+            kind: VarDeclKind::Const,
+            declare: false,
+            decls: vec![VarDeclarator {
+                span: DUMMY_SP,
+                name: Pat::Ident(in_range.into()),
+                init: Some(Box::new(Expr::Arrow(arrow))),
+                definite: false,
+            }],
+        }
+        .into()
     }
 }
 
@@ -997,26 +1361,54 @@ impl VisitMut for Lower {
     fn visit_mut_module(&mut self, module: &mut Module) {
         module.visit_mut_children_with(self);
 
-        if let Some(absurd) = self.absurd.take() {
+        // Hoisted range aliases. Spliced BEFORE the value helpers so the
+        // helpers end up above them in the output: the aliases are pure
+        // types (order is irrelevant to tsc), but a fixed position keeps
+        // the emitted preamble stable and readable.
+        if !self.range_aliases.is_empty() {
+            let idx = helper_insert_index(&module.body);
+            let aliases = std::mem::take(&mut self.range_aliases);
+            module
+                .body
+                .splice(idx..idx, aliases.into_iter().map(ModuleItem::Stmt));
+        }
+
+        // The two VALUE helpers (`__ztsAbsurd`, `__ztsInRange`) share one
+        // injection: one import in preamble mode, one splice of inline
+        // declarations otherwise. Order is fixed so output is
+        // deterministic; a module that needs only `__ztsAbsurd` emits
+        // exactly what it emitted before ranges existed.
+        let absurd = self.absurd.take();
+        let in_range = self.in_range.take();
+        if absurd.is_some() || in_range.is_some() {
+            let idx = helper_insert_index(&module.body);
             if self.preamble_import {
-                // import { __ztsAbsurd } from "@zestty/core"; — same ident
-                // (same mark), so hygiene treats it exactly like the decl.
-                let idx = helper_insert_index(&module.body);
+                // import { __ztsAbsurd, __ztsInRange } from "@zestty/core";
+                // — same idents (same marks), so hygiene treats them
+                // exactly like the declarations they replace.
+                let spec = |local: Ident| {
+                    ImportSpecifier::Named(ImportNamedSpecifier {
+                        span: DUMMY_SP,
+                        local,
+                        // No explicit `imported`: the local IS the
+                        // exported name, and `Some` would emit a
+                        // redundant `as` alias. (User `__zts*` idents
+                        // are rejected by semantic F9, so hygiene never
+                        // needs to rename these locals.)
+                        imported: None,
+                        is_type_only: false,
+                    })
+                };
+                let specifiers = absurd
+                    .into_iter()
+                    .chain(in_range)
+                    .map(spec)
+                    .collect::<Vec<_>>();
                 module.body.insert(
                     idx,
                     ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
                         span: DUMMY_SP,
-                        specifiers: vec![ImportSpecifier::Named(ImportNamedSpecifier {
-                            span: DUMMY_SP,
-                            local: absurd,
-                            // No explicit `imported`: the local IS the
-                            // exported name, and `Some` would emit a
-                            // redundant `as` alias. (User `__zts*` idents
-                            // are rejected by semantic F9, so hygiene never
-                            // needs to rename this local.)
-                            imported: None,
-                            is_type_only: false,
-                        })],
+                        specifiers,
                         src: Box::new(Str {
                             span: DUMMY_SP,
                             value: atom!("@zestty/core").into(),
@@ -1028,10 +1420,14 @@ impl VisitMut for Lower {
                     })),
                 );
             } else {
-                let idx = helper_insert_index(&module.body);
+                let decls: Vec<Stmt> = absurd
+                    .map(|a| self.absurd_decl(a))
+                    .into_iter()
+                    .chain(in_range.map(|r| self.in_range_decl(r)))
+                    .collect();
                 module
                     .body
-                    .insert(idx, ModuleItem::Stmt(self.absurd_decl(absurd)));
+                    .splice(idx..idx, decls.into_iter().map(ModuleItem::Stmt));
             }
         }
 
@@ -1080,9 +1476,23 @@ impl VisitMut for Lower {
     fn visit_mut_script(&mut self, script: &mut Script) {
         script.visit_mut_children_with(self);
 
-        if let Some(absurd) = self.absurd.take() {
+        if !self.range_aliases.is_empty() {
             let idx = script_insert_index(&script.body);
-            script.body.insert(idx, self.absurd_decl(absurd));
+            let aliases = std::mem::take(&mut self.range_aliases);
+            script.body.splice(idx..idx, aliases);
+        }
+
+        // Scripts cannot import: the value helpers are always inline.
+        let absurd = self.absurd.take();
+        let in_range = self.in_range.take();
+        if absurd.is_some() || in_range.is_some() {
+            let idx = script_insert_index(&script.body);
+            let decls: Vec<Stmt> = absurd
+                .map(|a| self.absurd_decl(a))
+                .into_iter()
+                .chain(in_range.map(|r| self.in_range_decl(r)))
+                .collect();
+            script.body.splice(idx..idx, decls);
         }
 
         if let Some(helpers) = self.constrict.take() {
