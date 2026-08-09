@@ -1,0 +1,34 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_zts_type_shadow.zts
+---
+error: identifiers starting with `__zts` are reserved for zts-generated code
+  --> tests/fixtures/errors/err_zts_type_shadow.zts:11:8
+   |
+11 |   type __ztsRange0 = number;
+   |        ^^^^^^^^^^^
+
+error: identifiers starting with `__zts` are reserved for zts-generated code
+  --> tests/fixtures/errors/err_zts_type_shadow.zts:19:29
+   |
+19 | export const byTypeParam = <__ztsRange1 extends number>(c: Code): string =>
+   |                             ^^^^^^^^^^^
+
+error: identifiers starting with `__zts` are reserved for zts-generated code
+  --> tests/fixtures/errors/err_zts_type_shadow.zts:26:11
+   |
+26 | interface __ztsRange2 {
+   |           ^^^^^^^^^^^
+
+error: identifiers starting with `__zts` are reserved for zts-generated code
+  --> tests/fixtures/errors/err_zts_type_shadow.zts:31:11
+   |
+31 | namespace __ztsHelpers {
+   |           ^^^^^^^^^^^^
+
+error: identifiers starting with `__zts` are reserved for zts-generated code
+  --> tests/fixtures/errors/err_zts_type_shadow.zts:36:6
+   |
+36 | type __ztsRange3 = number;
+   |      ^^^^^^^^^^^

@@ -235,6 +235,52 @@ fn missing_literal_arm_fails_tsc_naming_the_literal() {
 }
 
 #[test]
+fn zts_type_shadow_cannot_forge_exhaustiveness() {
+    // SECURITY (0.5.0 review, finding 1). Hygiene is not TS-type-aware, so
+    // a user `type __ztsRange0 = number` is neither renamed nor a tsc
+    // error — it silently re-points the range predicate and makes a match
+    // covering 2 of 5 members certify as exhaustive. Reproduced before the
+    // fix: tsc exited 0 and the program threw at runtime.
+    //
+    // The compile must now fail in the SEMANTIC pass, so no TypeScript
+    // ever exists for tsc to bless.
+    let path = repo_root().join("tests/fixtures/errors/err_zts_type_shadow.zts");
+    let (_, diags) = common::compile_fixture(&path)
+        .expect_err("a __zts type-plane shadow must not compile at all");
+    assert!(
+        diags.contains("reserved for zts-generated code"),
+        "the shadow must be rejected by the __zts reservation:\n{diags}"
+    );
+
+    // ... and the shadow really was load-bearing: rename the alias and the
+    // very same 2-of-5 match is the TS2345 it always should have been.
+    let renamed = "type Code = 1 | 2 | 3 | 4 | 5;\n\
+                   export const f = (c: Code): string => {\n\
+                   \x20 type NotReserved = number;\n\
+                   \x20 const _use: NotReserved = 1;\n\
+                   \x20 return match (c) {\n\
+                   \x20   1..=2 => \"low\",\n\
+                   \x20 };\n\
+                   };\n";
+    let out = zestty::compile_source(
+        "shadow_renamed.zts",
+        renamed.to_string(),
+        Default::default(),
+    )
+    .expect("the renamed form must still compile");
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    std::fs::create_dir_all(dir).unwrap();
+    let ts_path = dir.join("exit_shadow_renamed.ts");
+    std::fs::write(&ts_path, &out.code).unwrap();
+    let (ok, text) = tsc(&ts_path);
+    assert!(!ok, "a 2-of-5 ranged match must not typecheck");
+    assert!(
+        text.contains("TS2345") && text.contains("3"),
+        "tsc must name the uncovered members:\n{text}"
+    );
+}
+
+#[test]
 fn ranged_match_over_closed_union_passes_tsc() {
     // 0.5.0 range arms, the payload case: every member of a closed numeric
     // literal union is covered by SOME range, so the keystone discharges

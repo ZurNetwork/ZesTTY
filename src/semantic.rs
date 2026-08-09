@@ -145,19 +145,52 @@ impl Checker<'_> {
         }
     }
 
-    fn note_global_this_shadow(&mut self, ident: &Ident) {
-        if ident.sym == "globalThis" {
-            self.global_this_decls.push(ident.span);
-        }
-        // The `__zts` prefix is documented as generated-code-only; a user
-        // binding named `__ztsValue` etc. would collide with pre-resolver
-        // lowerings that hygiene cannot protect (security-gate F9).
+    /// The `__zts` namespace is generated-code-only, on BOTH planes.
+    ///
+    /// On the value plane this closes security-gate F9: a user binding
+    /// named `__ztsValue` would collide with a pre-resolver lowering that
+    /// hygiene cannot protect.
+    ///
+    /// On the TYPE plane it closes a keystone false-green (0.5.0 security
+    /// round, finding 1). Hygiene is not TS-type-aware, so it will not
+    /// rename a user type declaration that collides with a generated one —
+    /// and a shadowed generated type is not a compile error, it is a
+    /// SILENTLY DIFFERENT PROOF. Reproduced: with
+    /// `type __ztsRange0 = number` in an inner scope, a range arm covering
+    /// 2 of 5 union members re-points its predicate at `number`, narrows
+    /// the scrutinee to `never`, and certifies the match exhaustive — tsc
+    /// exits 0 and the program throws at runtime. The same shape would
+    /// forge `__ztsExpect`/`__ztsEqual` for `constrict`.
+    /// The `__zts` namespace is generated-code-only, on BOTH planes.
+    ///
+    /// On the value plane this closes security-gate F9: a user binding
+    /// named `__ztsValue` would collide with a pre-resolver lowering that
+    /// hygiene cannot protect.
+    ///
+    /// On the TYPE plane it closes a keystone false-green (0.5.0 security
+    /// round, finding 1). Hygiene is not TS-type-aware, so it will not
+    /// rename a user type declaration that collides with a generated one —
+    /// and a shadowed generated type is not a compile error, it is a
+    /// SILENTLY DIFFERENT PROOF. Reproduced: with
+    /// `type __ztsRange0 = number` in an inner scope, a range arm covering
+    /// 2 of 5 union members re-points its predicate at `number`, narrows
+    /// the scrutinee to `never`, and certifies the match exhaustive — tsc
+    /// exits 0 and the program throws at runtime. The same shape would
+    /// forge `__ztsExpect`/`__ztsEqual` for `constrict`.
+    fn note_zts_reserved_ident(&mut self, ident: &Ident) {
         if ident.sym.starts_with("__zts") {
             self.err(
                 ident.span,
                 "identifiers starting with `__zts` are reserved for zts-generated code",
             );
         }
+    }
+
+    fn note_global_this_shadow(&mut self, ident: &Ident) {
+        if ident.sym == "globalThis" {
+            self.global_this_decls.push(ident.span);
+        }
+        self.note_zts_reserved_ident(ident);
         // `not` is a reserved word since 0.4.0 (Zuri, 2026-08-07): the
         // parser owns expression positions; bindings are rejected here so
         // every binding path (const/let/fn/class/params/imports) gets one
@@ -1282,6 +1315,39 @@ impl Visit for Checker<'_> {
     fn visit_zts_newtype_decl(&mut self, n: &ZtsNewtypeDecl) {
         self.note_global_this_shadow(&n.ident);
         n.visit_children_with(self);
+    }
+
+    // The TYPE plane of the `__zts` reservation. Deliberately only the
+    // `__zts` check and not the whole of `note_global_this_shadow`:
+    // `type globalThis = X` cannot shadow the VALUE the absurd helper
+    // reaches through, and `not` is reserved in expression positions only
+    // (a type or namespace named `not` parses today and rejecting it would
+    // be an unrelated break). Both would be false positives here.
+
+    fn visit_ts_type_alias_decl(&mut self, d: &TsTypeAliasDecl) {
+        self.note_zts_reserved_ident(&d.id);
+        d.visit_children_with(self);
+    }
+
+    fn visit_ts_interface_decl(&mut self, d: &TsInterfaceDecl) {
+        self.note_zts_reserved_ident(&d.id);
+        d.visit_children_with(self);
+    }
+
+    fn visit_ts_type_param(&mut self, p: &TsTypeParam) {
+        // `<__ztsRange0 extends number>` shadows inside the whole
+        // signature and body — same forgery, different scope.
+        self.note_zts_reserved_ident(&p.name);
+        p.visit_children_with(self);
+    }
+
+    fn visit_ts_module_decl(&mut self, d: &TsModuleDecl) {
+        // `namespace __ztsX { export type ... }` plus a `__ztsX.Y`
+        // reference is the same shadow one indirection away.
+        if let TsModuleName::Ident(id) = &d.id {
+            self.note_zts_reserved_ident(id);
+        }
+        d.visit_children_with(self);
     }
 
     fn visit_ts_enum_decl(&mut self, e: &TsEnumDecl) {
