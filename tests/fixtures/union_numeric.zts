@@ -21,9 +21,12 @@ export function describe(s: HttpStatus): string {
   };
 }
 
-// Negative members, and the single-member degenerate case.
+// Negative members, and the single-member degenerate case. A negative
+// member keeps the notation the author chose on BOTH planes — `-0x10`
+// stays hexadecimal in the type alias, not re-rendered as `-16`.
 union Offset = -1 | 0 | 1;
 union Only = 7;
+union Mask = -0x10 | 0x10 | 1e2;
 
 // Impls keep working on a numeric union (Phase 7 item 5): the methods
 // merge into the same factory const, next to `values` and `has`.

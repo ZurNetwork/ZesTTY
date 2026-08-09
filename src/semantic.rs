@@ -1466,6 +1466,20 @@ impl Visit for Checker<'_> {
                 Lit::Str(s) => format!("s:{:?}", s.value),
                 Lit::Num(n) => {
                     let v = if m.neg { -n.value } else { n.value };
+                    // BY VALUE, not by raw text — the mirror image of the
+                    // range-bound rule in `range_bound`, and deliberately
+                    // so (0.5.0 review, code finding 9). A member is a
+                    // literal TYPE and is never enumerated, so its written
+                    // form carries no obligation: `1e3` is a perfectly good
+                    // way to say 1000. What matters is that `1` and `1.0`
+                    // are the SAME literal type to TypeScript, which would
+                    // deduplicate them silently and leave `values` longer
+                    // than the type — the value rule is what turns that
+                    // into one duplicate-member error. A range BOUND is the
+                    // opposite: it starts an enumeration, so `4e2..=4e3`
+                    // has to be rejected on its text however whole its
+                    // value is.
+                    //
                     // Fractional members are rejected in v1: the guard and
                     // the `values` tuple work either way, but a float
                     // vocabulary is almost always a modelling mistake, and

@@ -23,7 +23,9 @@ const HttpStatus = {
 } satisfies {
     [key: string]: unknown;
 } & Display<HttpStatus>;
-// Negative members, and the single-member degenerate case.
+// Negative members, and the single-member degenerate case. A negative
+// member keeps the notation the author chose on BOTH planes — `-0x10`
+// stays hexadecimal in the type alias, not re-rendered as `-16`.
 type Offset = -1 | 0 | 1;
 const Offset = {
     values: [
@@ -39,6 +41,15 @@ const Only = {
         7
     ] as const,
     has: (__ztsRaw: number): __ztsRaw is Only =>Only.values.indexOf(__ztsRaw as Only) !== -1
+};
+type Mask = -0x10 | 0x10 | 1e2;
+const Mask = {
+    values: [
+        -0x10,
+        0x10,
+        1e2
+    ] as const,
+    has: (__ztsRaw: number): __ztsRaw is Mask =>Mask.values.indexOf(__ztsRaw as Mask) !== -1
 };
 // The wire-normalizer, unchanged in shape: has() narrows a raw number to
 // the vocabulary type, so the fail-closed mapping is one expression.

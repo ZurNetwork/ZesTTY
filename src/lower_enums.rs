@@ -552,16 +552,24 @@ fn lower_union(u: &ZtsUnionDecl, impls: Vec<ZtsImplDecl>) -> (Decl, Decl) {
         }
     };
     // One member as a TYPE literal and as a VALUE expression. The sign
-    // lives on the member, not the literal, so it is reapplied here: a
-    // negative type literal carries the negation in its value, while the
+    // lives on the member, not the literal, so it is reapplied here: the
     // value side gets a real unary minus (the same shape a negative
-    // literal match arm lowers to).
+    // literal match arm lowers to), and the type side folds the sign into
+    // the literal's RAW TEXT.
+    //
+    // Raw, not just the negated value (0.5.0 review, security finding 6):
+    // dropping it makes codegen re-render from the f64, so `-0x10` emits as
+    // `-16` and `-1e2` as `-100`. The two planes would then disagree about
+    // what the author wrote — `values: [-0x10]` beside `type M = -16` — and
+    // a vocabulary chosen for its notation (masks, exponents) silently
+    // loses it. Positive members already keep their raw; negatives must
+    // too.
     let member_ts_lit = |m: &ZtsUnionMember| -> Box<TsType> {
         let lit = match (&m.lit, m.neg) {
             (Lit::Num(n), true) => TsLit::Number(Number {
                 span: n.span,
                 value: -n.value,
-                raw: None,
+                raw: n.raw.as_ref().map(|raw| format!("-{raw}").into()),
             }),
             (Lit::Num(n), false) => TsLit::Number(n.clone()),
             (Lit::Str(s), _) => TsLit::Str(s.clone()),
