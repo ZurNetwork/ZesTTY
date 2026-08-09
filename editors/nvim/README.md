@@ -93,6 +93,33 @@ override `indentexpr` with the stock Vim TypeScript indent (regex-based,
 superset-tolerant), scheduled after nvim-treesitter's attach so the
 override wins. No configuration needed.
 
+## Per-construct highlighting: the standing disposition (PR #52)
+
+Every zts syntax change ships with its VS Code grammar update and its
+nvim disposition, in the same patch. For nvim the disposition is the same
+one every time, and it is recorded here rather than re-argued per
+feature: **no per-construct highlight mechanism exists yet.** The reused
+TypeScript tree-sitter parser sees zts constructs as bare ERROR
+identifier nodes, so there is nothing to attach a capture to — a query
+cannot name what the parser did not produce.
+
+Constructs currently in that bucket, i.e. syntactically correct zts that
+nvim colours as plain TypeScript or not at all:
+
+- `match` arms and their patterns, enums-with-data, expression `if`,
+  `newtype`, `union`, `impl` blocks, `not`, postfix `?`, `constrict`,
+  `T[+]` (all pre-0.5.0);
+- `lo..=hi` range arm patterns (0.5.0) — the `..=` operator and its
+  bounds get no dedicated scope;
+- numeric and mixed `union` members (0.5.0) — the members themselves are
+  coloured by the TypeScript grammar's own number/string rules, which is
+  as good as it gets here, but the `union` keyword still is not.
+
+VS Code has all of these (see `editors/vscode/syntaxes/zts.tmLanguage.json`).
+The fix for nvim is not a better query: it is **LS semantic tokens**, on
+the post-0.4.0 DX slate. When that lands, this section and the CLAUDE.md
+parity caveat both retire — confirm with Zuri at that point.
+
 ## Notes
 
 - Filetype registration lives in `ftdetect/zts.lua`, which plugin
