@@ -3,13 +3,13 @@ source: tests/snapshots.rs
 expression: diags
 input_file: tests/fixtures/errors/err_range_covered.zts
 ---
-error: unreachable arm: every value of the range `410..=420` is already matched by the earlier arm `400..=499`
+error: unreachable arm: every value of the range `410..=420` is already matched by earlier arms (see `400..=499`)
  --> tests/fixtures/errors/err_range_covered.zts:3:3
   |
 3 |   410..=420 => "already covered",
   |   ^^^^^^^^^
   |
-note: the earlier arm is here
+note: an earlier arm covering these values is here
  --> tests/fixtures/errors/err_range_covered.zts:2:3
   |
 2 |   400..=499 => "client",

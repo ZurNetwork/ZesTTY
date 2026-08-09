@@ -34,3 +34,27 @@ namespace __ztsHelpers {
 
 // 5. module scope, for completeness
 type __ztsRange3 = number;
+
+// 6. `import X = Ns.Type` — the LAST type-name binder in the AST, and the
+// one that survived the first cut of this fix. All three routes the
+// security round found are covered: plain, `export import`, and nested
+// namespaces.
+namespace Wide {
+  export type W = number;
+}
+
+namespace Attack {
+  import __ztsRange4 = Wide.W;
+  export const use: __ztsRange4 = 1;
+}
+
+namespace ExportAttack {
+  export import __ztsRange5 = Wide.W;
+}
+
+namespace Outer {
+  export namespace Inner {
+    import __ztsRange6 = Wide.W;
+    export const use: __ztsRange6 = 1;
+  }
+}

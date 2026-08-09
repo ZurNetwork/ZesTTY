@@ -32,3 +32,21 @@ error: identifiers starting with `__zts` are reserved for zts-generated code
    |
 36 | type __ztsRange3 = number;
    |      ^^^^^^^^^^^
+
+error: identifiers starting with `__zts` are reserved for zts-generated code
+  --> tests/fixtures/errors/err_zts_type_shadow.zts:47:10
+   |
+47 |   import __ztsRange4 = Wide.W;
+   |          ^^^^^^^^^^^
+
+error: identifiers starting with `__zts` are reserved for zts-generated code
+  --> tests/fixtures/errors/err_zts_type_shadow.zts:52:17
+   |
+52 |   export import __ztsRange5 = Wide.W;
+   |                 ^^^^^^^^^^^
+
+error: identifiers starting with `__zts` are reserved for zts-generated code
+  --> tests/fixtures/errors/err_zts_type_shadow.zts:57:12
+   |
+57 |     import __ztsRange6 = Wide.W;
+   |            ^^^^^^^^^^^

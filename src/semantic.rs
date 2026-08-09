@@ -154,14 +154,48 @@ const MAX_DIAGNOSTICS: usize = 100;
 
 impl Checker<'_> {
     fn err(&mut self, span: Span, msg: &str) {
+        self.emit(span, msg, None);
+    }
+
+    /// `err` plus a secondary span. Both go through `emit` so the
+    /// diagnostic-suppression accounting has exactly one copy (0.5.0
+    /// review, code finding 5): a second hand-rolled copy is a cap that
+    /// drifts.
+    fn err_with_note(&mut self, span: Span, msg: &str, note_span: Span, note: &str) {
+        self.emit(span, msg, Some((note_span, note)));
+    }
+
+    fn emit(&mut self, span: Span, msg: &str, note: Option<(Span, &str)>) {
         self.errors += 1;
         match self.errors.cmp(&MAX_DIAGNOSTICS) {
-            std::cmp::Ordering::Less => self.handler.struct_span_err(span, msg).emit(),
+            std::cmp::Ordering::Less => {
+                let mut diag = self.handler.struct_span_err(span, msg);
+                if let Some((note_span, note)) = note {
+                    diag.span_note(note_span, note);
+                }
+                diag.emit();
+            }
             std::cmp::Ordering::Equal => self
                 .handler
                 .struct_span_err(span, "too many errors; further zts diagnostics suppressed")
                 .emit(),
             std::cmp::Ordering::Greater => {}
+        }
+    }
+
+    /// A reachability error, naming the EARLIER ARM THE AUTHOR WROTE and
+    /// pointing a secondary span at it (0.5.0 review, code finding 4).
+    /// Naming the merged interval instead sends the author hunting for an
+    /// arm that does not exist in their source.
+    fn err_covered(&mut self, arm: SourceArm, prior: &Coverage, prefix: &str) {
+        match prior.source_hit(arm.lo, arm.hi) {
+            Some(earlier) => self.err_with_note(
+                arm.span,
+                &format!("{prefix} earlier arms (see `{earlier}`)"),
+                earlier.span,
+                "an earlier arm covering these values is here",
+            ),
+            None => self.err(arm.span, &format!("{prefix} earlier arms")),
         }
     }
 
@@ -181,39 +215,12 @@ impl Checker<'_> {
     /// the scrutinee to `never`, and certifies the match exhaustive — tsc
     /// exits 0 and the program throws at runtime. The same shape would
     /// forge `__ztsExpect`/`__ztsEqual` for `constrict`.
-    /// A reachability error, naming the EARLIER ARM THE AUTHOR WROTE and
-    /// pointing a secondary span at it (0.5.0 review, code finding 4).
-    /// Naming the merged interval instead sends the author hunting for an
-    /// arm that does not exist in their source.
-    fn err_covered(&mut self, arm: SourceArm, prior: &Coverage, prefix: &str) {
-        self.errors += 1;
-        if self.errors > MAX_DIAGNOSTICS {
-            return;
-        }
-        if self.errors == MAX_DIAGNOSTICS {
-            self.handler
-                .struct_span_err(
-                    arm.span,
-                    "too many errors; further zts diagnostics suppressed",
-                )
-                .emit();
-            return;
-        }
-        match prior.source_hit(arm.lo, arm.hi) {
-            Some(earlier) => {
-                let mut diag = self
-                    .handler
-                    .struct_span_err(arm.span, &format!("{prefix} the earlier arm `{earlier}`"));
-                diag.span_note(earlier.span, "the earlier arm is here");
-                diag.emit();
-            }
-            None => self
-                .handler
-                .struct_span_err(arm.span, &format!("{prefix} an earlier arm"))
-                .emit(),
-        }
-    }
-
+    ///
+    /// Every AST node that can bind a TYPE name routes here: type aliases,
+    /// interfaces, type parameters, namespaces, and `import X = Y.Z`. With
+    /// import-equals the set is complete — those five plus the value-plane
+    /// binders (classes, import specifiers, and everything
+    /// `note_global_this_shadow` already covered).
     fn note_zts_reserved_ident(&mut self, ident: &Ident) {
         if ident.sym.starts_with("__zts") {
             self.err(
@@ -1464,10 +1471,18 @@ impl Visit for Checker<'_> {
 
     // The TYPE plane of the `__zts` reservation. Deliberately only the
     // `__zts` check and not the whole of `note_global_this_shadow`:
-    // `type globalThis = X` cannot shadow the VALUE the absurd helper
-    // reaches through, and `not` is reserved in expression positions only
-    // (a type or namespace named `not` parses today and rejecting it would
-    // be an unrelated break). Both would be false positives here.
+    //
+    // - a `type globalThis = X` ALIAS lives purely in the type plane and
+    //   cannot shadow the VALUE the absurd helper reaches through, so
+    //   pushing it onto `global_this_decls` would be a false positive.
+    //   (`namespace globalThis { ... }` is a different story — it DOES
+    //   reach the value plane. Its failure mode is a loud false-RED: a
+    //   TS2339 for `Error` on generated code, confusing but sound. Giving
+    //   it the friendlier zts diagnostic is a message-quality improvement,
+    //   not a soundness fix, and is deliberately out of scope here.)
+    // - `not` is reserved in expression positions only, so a type or
+    //   namespace named `not` parses today and rejecting it would be an
+    //   unrelated break.
 
     fn visit_ts_type_alias_decl(&mut self, d: &TsTypeAliasDecl) {
         self.note_zts_reserved_ident(&d.id);
@@ -1492,6 +1507,18 @@ impl Visit for Checker<'_> {
         if let TsModuleName::Ident(id) = &d.id {
             self.note_zts_reserved_ident(id);
         }
+        d.visit_children_with(self);
+    }
+
+    fn visit_ts_import_equals_decl(&mut self, d: &TsImportEqualsDecl) {
+        // `import X = Ns.Type;` binds a TYPE name (and a value name) in the
+        // enclosing scope — the LAST such binder in the AST, and the one
+        // that survived round 1 of this fix. Reproduced: inside a
+        // namespace, `import __ztsRange0 = Helpers.Wide;` re-points a
+        // hoisted range alias at `number` and a 2-of-5 match certifies
+        // exhaustive with tsc exiting 0. `export import` and nested
+        // namespaces are the same route.
+        self.note_zts_reserved_ident(&d.id);
         d.visit_children_with(self);
     }
 

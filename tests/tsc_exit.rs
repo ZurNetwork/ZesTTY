@@ -251,6 +251,50 @@ fn zts_type_shadow_cannot_forge_exhaustiveness() {
         diags.contains("reserved for zts-generated code"),
         "the shadow must be rejected by the __zts reservation:\n{diags}"
     );
+    // Every type-name binder in the AST, one diagnostic each: type alias,
+    // type parameter, interface, namespace, module-scope alias, and the
+    // three `import X = Ns.T` routes (plain, `export import`, nested
+    // namespace) that survived the first cut of this fix.
+    assert_eq!(
+        diags.matches("reserved for zts-generated code").count(),
+        8,
+        "every type-name binder must be covered:\n{diags}"
+    );
+
+    // Each import-equals route on its own, so a regression in one cannot
+    // hide behind the others — and each must die in the SEMANTIC pass,
+    // with no TypeScript produced for tsc to bless.
+    for (name, src) in [
+        (
+            "plain",
+            "namespace H { export type W = number; }\n\
+             namespace A {\n\
+             \x20 import __ztsRange0 = H.W;\n\
+             \x20 export const u: __ztsRange0 = 1;\n\
+             }\n",
+        ),
+        (
+            "export import",
+            "namespace H { export type W = number; }\n\
+             export namespace A { export import __ztsRange0 = H.W; }\n",
+        ),
+        (
+            "nested namespace",
+            "namespace H { export type W = number; }\n\
+             export namespace A { export namespace B {\n\
+             \x20 import __ztsRange0 = H.W;\n\
+             \x20 export const u: __ztsRange0 = 1;\n\
+             } }\n",
+        ),
+    ] {
+        let err = zestty::compile_source("ieq.zts", src.to_string(), Default::default())
+            .expect_err(&format!("{name} import-equals shadow must not compile"));
+        assert!(
+            err.diagnostics.contains("reserved for zts-generated code"),
+            "{name}: {}",
+            err.diagnostics
+        );
+    }
 
     // ... and the shadow really was load-bearing: rename the alias and the
     // very same 2-of-5 match is the TS2345 it always should have been.
