@@ -3,8 +3,14 @@ source: tests/snapshots.rs
 expression: diags
 input_file: tests/fixtures/errors/err_range_covered_literal.zts
 ---
-error: unreachable arm: `404` is already covered by the earlier range `400..=499`
+error: unreachable arm: `404` is already covered by the earlier arm `400..=499`
  --> tests/fixtures/errors/err_range_covered_literal.zts:3:3
   |
 3 |   404 => "already covered by the range above",
   |   ^^^
+  |
+note: the earlier arm is here
+ --> tests/fixtures/errors/err_range_covered_literal.zts:2:3
+  |
+2 |   400..=499 => "client",
+  |   ^^^^^^^^^

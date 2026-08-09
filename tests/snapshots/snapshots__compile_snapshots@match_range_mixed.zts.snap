@@ -36,6 +36,13 @@ export function describe(n: number): string {
 // Radix-prefixed bounds are integer literals by construction, and the
 // literals the author wrote survive into the call (only the erased alias
 // is enumerated).
+//
+// Range BOUNDS are checked by their written form, so `4e2..=4e3` is an
+// error even though both values are whole: a bound is the start of an
+// enumeration and has to read like one. `union` MEMBERS are checked by
+// value instead — they are never enumerated, and the value rule is what
+// makes `1` and `1.0` a duplicate-member error rather than a silently
+// deduplicated type.
 export function mask(n: number): string {
     return ((__m)=>{
         if (__ztsInRange<__ztsRange4>(__m, 0x10, 0x1f)) {

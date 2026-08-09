@@ -5,7 +5,7 @@
 //! reject zts constructs that are syntactically valid but outside the
 //! locked Phase 1 grammar, with spans pointing at the original `.zts`.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use swc_common::{Span, Spanned, errors::Handler};
 use swc_ecma_ast::*;
@@ -28,6 +28,18 @@ const MAX_EXPR_DEPTH: usize = 2048;
 /// 1024 covers every realistic literal-union vocabulary (the whole HTTP
 /// 4xx/5xx space is 100 values each) with two orders of magnitude spare.
 pub const MAX_RANGE_WIDTH: i64 = 1024;
+
+/// Total enumerated range values allowed in ONE MODULE.
+///
+/// [`MAX_RANGE_WIDTH`] bounds a single arm; without a module-wide budget
+/// the same DoS just needs more arms. Measured on the 0.5.0 security
+/// round: 447 KB of *individually legal* disjoint range arms expanded to
+/// ~160 MB of generated TypeScript and 2.7 GB RSS — and the language
+/// server pays that on every keystroke, because it recompiles the whole
+/// document. 65_536 is ~64x the single-arm cap and two orders of
+/// magnitude above any real vocabulary; the diagnostic names both the
+/// running total and the cap so the author can see what they spent it on.
+pub const MAX_RANGE_TOTAL: i64 = 65_536;
 
 /// Bounds must be exactly representable as integers, so the enumeration
 /// `lo..=hi` is exact. `2^53 - 1`, JavaScript's `Number.MAX_SAFE_INTEGER`.
@@ -66,6 +78,8 @@ pub fn check(module: &Module, handler: &Handler) -> Result<(), SemanticFailure> 
         enclosing_fn: EnclosingFn::None,
         next_fn_is_setter: false,
         sanctioned_impls: HashSet::new(),
+        range_values_total: 0,
+        range_total_reported: false,
     };
     module.visit_with(&mut checker);
 
@@ -125,6 +139,12 @@ struct Checker<'a> {
     /// (`if (c) impl ...`), which the list-based orphan check never sees
     /// and the lowering cannot merge.
     sanctioned_impls: HashSet<usize>,
+    /// Running total of values enumerated by range arms in this MODULE
+    /// (0.5.0 review, code finding 3 / security finding 2). The per-arm
+    /// width cap does not bound the aggregate; this does.
+    range_values_total: i64,
+    /// The module budget message is emitted once, not once per later arm.
+    range_total_reported: bool,
 }
 
 /// Hard cap on RENDERED zts diagnostics: each one re-renders its source
@@ -161,22 +181,39 @@ impl Checker<'_> {
     /// the scrutinee to `never`, and certifies the match exhaustive — tsc
     /// exits 0 and the program throws at runtime. The same shape would
     /// forge `__ztsExpect`/`__ztsEqual` for `constrict`.
-    /// The `__zts` namespace is generated-code-only, on BOTH planes.
-    ///
-    /// On the value plane this closes security-gate F9: a user binding
-    /// named `__ztsValue` would collide with a pre-resolver lowering that
-    /// hygiene cannot protect.
-    ///
-    /// On the TYPE plane it closes a keystone false-green (0.5.0 security
-    /// round, finding 1). Hygiene is not TS-type-aware, so it will not
-    /// rename a user type declaration that collides with a generated one —
-    /// and a shadowed generated type is not a compile error, it is a
-    /// SILENTLY DIFFERENT PROOF. Reproduced: with
-    /// `type __ztsRange0 = number` in an inner scope, a range arm covering
-    /// 2 of 5 union members re-points its predicate at `number`, narrows
-    /// the scrutinee to `never`, and certifies the match exhaustive — tsc
-    /// exits 0 and the program throws at runtime. The same shape would
-    /// forge `__ztsExpect`/`__ztsEqual` for `constrict`.
+    /// A reachability error, naming the EARLIER ARM THE AUTHOR WROTE and
+    /// pointing a secondary span at it (0.5.0 review, code finding 4).
+    /// Naming the merged interval instead sends the author hunting for an
+    /// arm that does not exist in their source.
+    fn err_covered(&mut self, arm: SourceArm, prior: &Coverage, prefix: &str) {
+        self.errors += 1;
+        if self.errors > MAX_DIAGNOSTICS {
+            return;
+        }
+        if self.errors == MAX_DIAGNOSTICS {
+            self.handler
+                .struct_span_err(
+                    arm.span,
+                    "too many errors; further zts diagnostics suppressed",
+                )
+                .emit();
+            return;
+        }
+        match prior.source_hit(arm.lo, arm.hi) {
+            Some(earlier) => {
+                let mut diag = self
+                    .handler
+                    .struct_span_err(arm.span, &format!("{prefix} the earlier arm `{earlier}`"));
+                diag.span_note(earlier.span, "the earlier arm is here");
+                diag.emit();
+            }
+            None => self
+                .handler
+                .struct_span_err(arm.span, &format!("{prefix} an earlier arm"))
+                .emit(),
+        }
+    }
+
     fn note_zts_reserved_ident(&mut self, ident: &Ident) {
         if ident.sym.starts_with("__zts") {
             self.err(
@@ -239,14 +276,13 @@ impl Checker<'_> {
         // Syntactic reachability over the integer number line (0.5.0). tsc
         // is SILENT about a range arm shadowed by an earlier one — nothing
         // in the generated TS is ill-typed — so this is the compile-error
-        // class ranges bring with them. Merged, sorted, disjoint intervals:
-        // `covered` holds earlier range arms AND earlier integer literal
-        // arms; `ranges` holds only the range arms, because a literal
-        // written before a range that contains it is the deliberate
-        // specific-case-first idiom (`404 => …, 400..=499 => …`) and must
-        // keep working.
-        let mut covered: Vec<(i64, i64)> = Vec::new();
-        let mut ranges: Vec<(i64, i64)> = Vec::new();
+        // class ranges bring with them. `covered` holds earlier range arms
+        // AND earlier integer literal arms; `ranges` holds only the range
+        // arms, because a literal written before a range that contains it
+        // is the deliberate specific-case-first idiom
+        // (`404 => …, 400..=499 => …`) and must keep working.
+        let mut covered = Coverage::default();
+        let mut ranges = Coverage::default();
 
         for arm in &m.arms {
             if wildcard_seen {
@@ -321,16 +357,20 @@ impl Checker<'_> {
                         // interval check would blame an earlier RANGE for
                         // what is plainly a duplicate literal.
                     } else if let Some(v) = integer_literal_value(&l.lit, l.neg) {
-                        if let Some((a, b)) = interval_overlap(&ranges, v, v) {
-                            self.err(
-                                l.span,
-                                &format!(
-                                    "unreachable arm: `{v}` is already covered by the earlier \
-                                     range `{a}..={b}`"
-                                ),
+                        let arm = SourceArm {
+                            lo: v,
+                            hi: v,
+                            span: l.span,
+                            is_range: false,
+                        };
+                        if ranges.overlap(v, v).is_some() {
+                            self.err_covered(
+                                arm,
+                                &ranges,
+                                &format!("unreachable arm: `{v}` is already covered by"),
                             );
                         }
-                        interval_insert(&mut covered, v, v);
+                        covered.insert(arm);
                     }
                 }
                 MatchPat::Range(r) => {
@@ -343,25 +383,32 @@ impl Checker<'_> {
                         _ => mode = Some("lit"),
                     }
                     if let Some((lo, hi)) = self.check_range_bounds(r) {
-                        if let Some((a, b)) = interval_covering(&covered, lo, hi) {
-                            self.err(
-                                r.span,
+                        let arm = SourceArm {
+                            lo,
+                            hi,
+                            span: r.span,
+                            is_range: true,
+                        };
+                        if covered.covering(lo, hi).is_some() {
+                            self.err_covered(
+                                arm,
+                                &covered,
                                 &format!(
-                                    "unreachable arm: the range `{lo}..={hi}` is already fully \
-                                     covered by earlier arms (`{a}..={b}`)"
+                                    "unreachable arm: every value of the range `{lo}..={hi}` is \
+                                     already matched by"
                                 ),
                             );
-                        } else if let Some((a, b)) = interval_overlap(&ranges, lo, hi) {
-                            self.err(
-                                r.span,
+                        } else if ranges.overlap(lo, hi).is_some() {
+                            self.err_covered(
+                                arm,
+                                &ranges,
                                 &format!(
-                                    "overlapping range arms: `{lo}..={hi}` overlaps the earlier \
-                                     range `{a}..={b}`; range arms in one match must be disjoint"
+                                    "overlapping range arms: `{lo}..={hi}` shares values with"
                                 ),
                             );
                         }
-                        interval_insert(&mut covered, lo, hi);
-                        interval_insert(&mut ranges, lo, hi);
+                        covered.insert(arm);
+                        ranges.insert(arm);
                     }
                 }
             }
@@ -380,8 +427,8 @@ impl Checker<'_> {
     /// interval and no lowering runs (the compile already failed), so a
     /// pathological range can never reach the enumeration in `lower.rs`.
     fn check_range_bounds(&mut self, r: &MatchRangePat) -> Option<(i64, i64)> {
-        let lo = self.range_bound(&r.lo, r.lo_neg, r.span)?;
-        let hi = self.range_bound(&r.hi, r.hi_neg, r.span)?;
+        let lo = self.range_bound(&r.lo, r.lo_neg, r.lo.span)?;
+        let hi = self.range_bound(&r.hi, r.hi_neg, r.hi.span)?;
 
         if lo > hi {
             self.err(
@@ -410,10 +457,41 @@ impl Checker<'_> {
             return None;
         }
 
+        // Per-MODULE budget. The per-arm cap alone does not bound the
+        // expansion: the same attack just uses more arms, each of them
+        // individually legal (measured: 447 KB of source → ~160 MB of
+        // generated TS, 2.7 GB RSS, and the LS pays it per keystroke).
+        // Checked here, before any coverage bookkeeping or lowering
+        // allocation happens.
+        match self.range_values_total.checked_add(width) {
+            Some(total) if total <= MAX_RANGE_TOTAL => self.range_values_total = total,
+            _ => {
+                let total = self.range_values_total.saturating_add(width);
+                // Once per module: every later range arm would repeat the
+                // same budget message with the same number.
+                if !std::mem::replace(&mut self.range_total_reported, true) {
+                    self.err(
+                        r.span,
+                        &format!(
+                            "range arms in this module enumerate {total} values, over the zts \
+                             limit of {MAX_RANGE_TOTAL}: each value becomes a literal type in the \
+                             generated \
+                         TypeScript, and the language server re-expands all of them on every \
+                             keystroke. Narrow the ranges, or match on `number` with a `_` arm."
+                        ),
+                    );
+                }
+                return None;
+            }
+        }
+
         Some((lo, hi))
     }
 
-    /// One range bound: an INTEGER number literal, optionally negated.
+    /// One range bound: an INTEGER number literal, optionally negated. The
+    /// span is the BOUND's own (0.5.0 review, code finding 5) — pointing at
+    /// the whole range for a problem with one end of it makes the author
+    /// check both.
     fn range_bound(&mut self, n: &Number, neg: bool, span: Span) -> Option<i64> {
         // Decimal-point and exponent forms are rejected on the literal's
         // RAW TEXT, not its value: `4e2` is integral (400) but is not an
@@ -422,6 +500,17 @@ impl Checker<'_> {
         // literals by construction — and `0x1E` contains an `E` that is a
         // hex digit, not an exponent, so they must be excluded from the
         // text scan.
+        //
+        // ASYMMETRY, deliberate (0.5.0 review, code finding 9): a `union`
+        // MEMBER is checked by VALUE (`fract() != 0`), a range BOUND by
+        // RAW TEXT. They answer different questions. A range bound is the
+        // start of an ENUMERATION, so its written form has to be one the
+        // reader can count from — `4e2..=4e3` reads like "4 to 4000" and
+        // enumerates 2601 values. A union member is just a literal type,
+        // never enumerated, and the value rule is what makes `1` and `1.0`
+        // collapse into the one duplicate-member error TypeScript would
+        // otherwise apply silently. See `visit_zts_union_decl` for the
+        // other half.
         if let Some(raw) = n.raw.as_deref() {
             let bytes = raw.as_bytes();
             let radix_prefixed = bytes.len() > 1
@@ -507,45 +596,101 @@ fn integer_literal_value(lit: &Lit, neg: bool) -> Option<i64> {
     Some(v as i64)
 }
 
-// Merged, sorted, disjoint, non-adjacent integer intervals. Adjacency
-// counts as overlap for merging ([1,2] + [3,4] = [1,4]) because the values
-// are integers: nothing can sit between them.
-
-/// The single merged interval that fully contains `lo..=hi`, if any. Valid
-/// because the list is merged: a covered range lies inside ONE interval.
-fn interval_covering(ivals: &[(i64, i64)], lo: i64, hi: i64) -> Option<(i64, i64)> {
-    ivals.iter().copied().find(|&(a, b)| a <= lo && hi <= b)
+/// One literal-mode arm as the author wrote it, for diagnostics.
+#[derive(Clone, Copy)]
+struct SourceArm {
+    lo: i64,
+    hi: i64,
+    span: Span,
+    is_range: bool,
 }
 
-/// The first merged interval that shares any value with `lo..=hi`.
-fn interval_overlap(ivals: &[(i64, i64)], lo: i64, hi: i64) -> Option<(i64, i64)> {
-    ivals.iter().copied().find(|&(a, b)| a <= hi && lo <= b)
-}
-
-/// Insert `lo..=hi`, merging into any interval it touches. Linear, and the
-/// list stays sorted.
-fn interval_insert(ivals: &mut Vec<(i64, i64)>, lo: i64, hi: i64) {
-    let (mut lo, mut hi) = (lo, hi);
-    let mut out: Vec<(i64, i64)> = Vec::with_capacity(ivals.len() + 1);
-    let mut placed = false;
-    for &(a, b) in ivals.iter() {
-        if b.saturating_add(1) < lo {
-            out.push((a, b));
-        } else if hi.saturating_add(1) < a {
-            if !placed {
-                out.push((lo, hi));
-                placed = true;
-            }
-            out.push((a, b));
+impl std::fmt::Display for SourceArm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_range {
+            write!(f, "{}..={}", self.lo, self.hi)
         } else {
-            lo = lo.min(a);
-            hi = hi.max(b);
+            write!(f, "{}", self.lo)
         }
     }
-    if !placed {
-        out.push((lo, hi));
+}
+
+/// Merged, disjoint, non-adjacent integer intervals — the coverage the
+/// arms seen so far have accumulated. Adjacency counts as overlap when
+/// merging (`[1,2] + [3,4] = [1,4]`) because the values are integers:
+/// nothing can sit between them.
+///
+/// Keyed by lower bound in a `BTreeMap` so every operation is O(log n)
+/// (0.5.0 security round, finding 3). The first cut rebuilt a `Vec` per
+/// insert, which is O(n²) over disjoint arms and REGRESSED pre-0.5.0
+/// code: a 50k plain-literal-arm match went from 0.11s to 2.3s, and the
+/// language server pays that per keystroke.
+///
+/// `merged` decides; `sources` only supplies the arm text and span for a
+/// diagnostic. They are separate because a merged interval is usually
+/// several arms, and naming the merge ("already covered by `0..=9`") sends
+/// the author looking for an arm they never wrote.
+#[derive(Default)]
+struct Coverage {
+    merged: BTreeMap<i64, i64>,
+    sources: BTreeMap<i64, SourceArm>,
+}
+
+impl Coverage {
+    /// The merged interval that fully contains `lo..=hi`, if any. Exact:
+    /// the intervals are merged, so a covered range lies inside exactly
+    /// one of them, and it is the last one starting at or before `lo`.
+    fn covering(&self, lo: i64, hi: i64) -> Option<(i64, i64)> {
+        let (&a, &b) = self.merged.range(..=lo).next_back()?;
+        (hi <= b).then_some((a, b))
     }
-    *ivals = out;
+
+    /// A merged interval sharing any value with `lo..=hi`. Exact: if any
+    /// overlaps, so does the last one starting at or before `hi`.
+    fn overlap(&self, lo: i64, hi: i64) -> Option<(i64, i64)> {
+        let (&a, &b) = self.merged.range(..=hi).next_back()?;
+        (b >= lo).then_some((a, b))
+    }
+
+    /// An EARLIER source arm intersecting `lo..=hi`, for the message.
+    /// Best-effort by design: the verdict already came from `merged`, and
+    /// source arms can themselves overlap once an error has been reported,
+    /// in which case naming any intersecting one is still right.
+    fn source_hit(&self, lo: i64, hi: i64) -> Option<SourceArm> {
+        let (_, arm) = self.sources.range(..=hi).next_back()?;
+        (arm.hi >= lo).then_some(*arm)
+    }
+
+    /// Record `arm`, merging its interval into the coverage. Amortized
+    /// O(log n): every interval is removed at most once over the life of
+    /// the map.
+    fn insert(&mut self, arm: SourceArm) {
+        self.sources.entry(arm.lo).or_insert(arm);
+
+        let (mut start, mut end) = (arm.lo, arm.hi);
+        // Absorb a left neighbour that touches (adjacent counts).
+        if let Some((&a, &b)) = self.merged.range(..start).next_back() {
+            if b.saturating_add(1) >= start {
+                start = a;
+                end = end.max(b);
+            }
+        }
+        // Absorb every interval starting inside (or adjacent to) the run.
+        // Only the LAST removal can extend `end`, and the next interval
+        // after it starts at least two past its own end, so one pass is
+        // enough.
+        let keys: Vec<i64> = self
+            .merged
+            .range(start..=end.saturating_add(1))
+            .map(|(&a, _)| a)
+            .collect();
+        for k in keys {
+            if let Some(b) = self.merged.remove(&k) {
+                end = end.max(b);
+            }
+        }
+        self.merged.insert(start, end);
+    }
 }
 
 /// Return-shape of the nearest enclosing function, for the `?` operator.
