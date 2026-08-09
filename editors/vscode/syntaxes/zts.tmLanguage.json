@@ -170,7 +170,7 @@
       ]
     },
     "zts-union-declaration": {
-      "comment": "`union Name = 'a' | 'b';` — contextual, same-line identifier + `=` commits (mirrors the `type`-alias rule; `const union = 2;` stays vanilla)",
+      "comment": "`union Name = 'a' | 'b';` / `union Name = 200 | 404;` — contextual, same-line identifier + `=` commits (mirrors the `type`-alias rule; `const union = 2;` stays vanilla). Members are string or number literals (0.5.0) and are coloured by the embedded TypeScript grammar, which already scopes both.",
       "match": "(?<![.$])\\b(union)\\b\\s+([A-Za-z_$][\\w$]*)\\b(?=\\s*=)",
       "captures": {
         "1": {
