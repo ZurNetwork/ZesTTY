@@ -504,7 +504,26 @@ impl Lower {
             hi_neg,
         } = pat;
 
-        let alias = self.range_alias(pat_span, &lo, lo_neg, &hi, hi_neg);
+        // Out of contract (see `range_alias`) means no alias, no helper
+        // call and a dead `if (false)` — the arm can never match, which is
+        // what failing closed means here.
+        let Some(alias) = self.range_alias(pat_span, &lo, lo_neg, &hi, hi_neg) else {
+            let mut cons_stmts: Vec<Stmt> = Vec::with_capacity(1);
+            push_body_as_return(&mut cons_stmts, body);
+            return Stmt::If(IfStmt {
+                span,
+                test: Box::new(Expr::Lit(Lit::Bool(Bool {
+                    span: pat_span,
+                    value: false,
+                }))),
+                cons: Box::new(Stmt::Block(BlockStmt {
+                    span,
+                    ctxt: SyntaxContext::empty(),
+                    stmts: cons_stmts,
+                })),
+                alt: None,
+            });
+        };
         let in_range = self.in_range_ident();
 
         let bound = |n: Number, neg: bool| -> Box<Expr> {
@@ -571,14 +590,19 @@ impl Lower {
     }
 
     /// Hoists `type __ztsRangeN = lo | lo+1 | … | hi;` and returns its
-    /// identifier.
+    /// identifier — or `None` when the bounds are out of contract.
     ///
     /// Defense in depth: the semantic pass has already rejected non-integer
     /// bounds, `lo > hi`, and widths over `MAX_RANGE_WIDTH` — but
     /// `MatchRangePat` is public API (napi, tests), and an embedder that
     /// skips the semantic pass must not be able to make the compiler
-    /// allocate billions of nodes. Anything out of contract collapses to
-    /// `never`, which fails closed: the arm can then never match.
+    /// allocate billions of nodes.
+    ///
+    /// `None` makes the caller emit `if (false)` rather than an alias of
+    /// `never` fed to the predicate: `__ztsInRange<never>(…)` is a call
+    /// whose type argument violates `T extends number`, so it would be a
+    /// tsc error on GENERATED code — a diagnostic the author cannot act
+    /// on, from a path that should simply produce a dead arm.
     fn range_alias(
         &mut self,
         span: Span,
@@ -586,36 +610,33 @@ impl Lower {
         lo_neg: bool,
         hi: &Number,
         hi_neg: bool,
-    ) -> Ident {
+    ) -> Option<Ident> {
         let value = |n: &Number, neg: bool| if neg { -n.value } else { n.value };
         let (lo_v, hi_v) = (value(lo, lo_neg), value(hi, hi_neg));
 
-        let members: Vec<Box<TsType>> = if lo_v.is_finite()
+        let in_contract = lo_v.is_finite()
             && hi_v.is_finite()
             && lo_v.fract() == 0.0
             && hi_v.fract() == 0.0
             && lo_v <= hi_v
-            && hi_v - lo_v < crate::semantic::MAX_RANGE_WIDTH as f64
-        {
-            let (lo_i, hi_i) = (lo_v as i64, hi_v as i64);
-            (lo_i..=hi_i)
-                .map(|v| {
-                    Box::new(TsType::TsLitType(TsLitType {
+            && hi_v - lo_v < crate::semantic::MAX_RANGE_WIDTH as f64;
+        if !in_contract {
+            return None;
+        }
+
+        let (lo_i, hi_i) = (lo_v as i64, hi_v as i64);
+        let members: Vec<Box<TsType>> = (lo_i..=hi_i)
+            .map(|v| {
+                Box::new(TsType::TsLitType(TsLitType {
+                    span,
+                    lit: TsLit::Number(Number {
                         span,
-                        lit: TsLit::Number(Number {
-                            span,
-                            value: v as f64,
-                            raw: None,
-                        }),
-                    }))
-                })
-                .collect()
-        } else {
-            vec![Box::new(TsType::TsKeywordType(TsKeywordType {
-                span,
-                kind: TsKeywordTypeKind::TsNeverKeyword,
-            }))]
-        };
+                        value: v as f64,
+                        raw: None,
+                    }),
+                }))
+            })
+            .collect();
 
         let n = self.range_count;
         self.range_count += 1;
@@ -641,7 +662,7 @@ impl Lower {
                 type_ann,
             }))));
 
-        alias_id
+        Some(alias_id)
     }
 
     /// ```ts
@@ -765,11 +786,12 @@ impl Lower {
     /// The inline (no @zestty/core) form of the range predicate:
     ///
     /// ```ts
-    /// const __ztsInRange = <T extends number>(
+    /// function __ztsInRange<T extends number>(
     ///     __ztsV: unknown, __ztsLo: number, __ztsHi: number,
-    /// ): __ztsV is T =>
-    ///     typeof __ztsV === "number" && __ztsV % 1 === 0
+    /// ): __ztsV is T {
+    ///     return typeof __ztsV === "number" && __ztsV % 1 === 0
     ///         && __ztsV >= __ztsLo && __ztsV <= __ztsHi;
+    /// }
     /// ```
     ///
     /// Byte-for-byte the same behaviour as the @zestty/core export, and
@@ -777,6 +799,16 @@ impl Lower {
     /// is `unknown` (a mixed scrutinee union must be able to reach it), and
     /// the integer gate is `% 1 === 0`, not `Number.isInteger`, which is
     /// ES2015 and would raise the emitted-TS lib floor.
+    ///
+    /// A FUNCTION DECLARATION, not the `const` arrow @zestty/core exports
+    /// (0.5.0 review, code finding 2). Inline mode injects the helper after
+    /// the imports, so under an ESM import cycle a module can be evaluated
+    /// while this module's bindings are still in their temporal dead zone —
+    /// a `const` arrow throws `ReferenceError: Cannot access '__ztsInRange'
+    /// before initialization` (reproduced), while a hoisted function
+    /// declaration is callable from the first line. `__ztsAbsurd` has been
+    /// a hoisted function since Phase 1 for exactly this reason; the two
+    /// inline helpers must not differ in hoisting behaviour.
     ///
     /// The parameter names carry the `__zts` prefix rather than the core
     /// package's plainer `__v`: user identifiers starting with `__zts` are
@@ -869,57 +901,67 @@ impl Lower {
             bound_check(op!("<="), &hi),
         );
 
-        let arrow = ArrowExpr {
-            span: DUMMY_SP,
-            ctxt: SyntaxContext::empty(),
-            params: vec![
-                param(&v, keyword(TsKeywordTypeKind::TsUnknownKeyword)),
-                param(&lo, keyword(TsKeywordTypeKind::TsNumberKeyword)),
-                param(&hi, keyword(TsKeywordTypeKind::TsNumberKeyword)),
-            ],
-            body: Box::new(BlockStmtOrExpr::Expr(Box::new(body))),
-            is_async: false,
-            is_generator: false,
-            // `<T extends number>`, never a bare `<T>`: the constraint is
-            // what keeps the arrow unambiguous in a `.tsx` twin, where a
-            // bare type parameter list would parse as a JSX element.
-            type_params: Some(Box::new(TsTypeParamDecl {
-                span: DUMMY_SP,
-                params: vec![TsTypeParam {
-                    span: DUMMY_SP,
-                    name: t.clone(),
-                    is_in: false,
-                    is_out: false,
-                    is_const: false,
-                    constraint: Some(keyword(TsKeywordTypeKind::TsNumberKeyword)),
-                    default: None,
-                }],
-            })),
-            return_type: Some(ann(Box::new(TsType::TsTypePredicate(TsTypePredicate {
-                span: DUMMY_SP,
-                asserts: false,
-                param_name: TsThisTypeOrIdent::Ident(v.clone()),
-                type_ann: Some(ann(Box::new(TsType::TsTypeRef(TsTypeRef {
-                    span: DUMMY_SP,
-                    type_name: TsEntityName::Ident(t),
-                    type_params: None,
-                })))),
-            })))),
-        };
-
-        VarDecl {
-            span: DUMMY_SP,
-            ctxt: SyntaxContext::empty(),
-            kind: VarDeclKind::Const,
+        Stmt::Decl(Decl::Fn(FnDecl {
+            ident: in_range,
             declare: false,
-            decls: vec![VarDeclarator {
+            function: Box::new(Function {
+                params: vec![
+                    Param {
+                        span: DUMMY_SP,
+                        decorators: Vec::new(),
+                        pat: param(&v, keyword(TsKeywordTypeKind::TsUnknownKeyword)),
+                    },
+                    Param {
+                        span: DUMMY_SP,
+                        decorators: Vec::new(),
+                        pat: param(&lo, keyword(TsKeywordTypeKind::TsNumberKeyword)),
+                    },
+                    Param {
+                        span: DUMMY_SP,
+                        decorators: Vec::new(),
+                        pat: param(&hi, keyword(TsKeywordTypeKind::TsNumberKeyword)),
+                    },
+                ],
+                decorators: Vec::new(),
                 span: DUMMY_SP,
-                name: Pat::Ident(in_range.into()),
-                init: Some(Box::new(Expr::Arrow(arrow))),
-                definite: false,
-            }],
-        }
-        .into()
+                ctxt: SyntaxContext::empty(),
+                body: Some(BlockStmt {
+                    span: DUMMY_SP,
+                    ctxt: SyntaxContext::empty(),
+                    stmts: vec![Stmt::Return(ReturnStmt {
+                        span: DUMMY_SP,
+                        arg: Some(Box::new(body)),
+                    })],
+                }),
+                is_generator: false,
+                is_async: false,
+                // `<T extends number>`, never a bare `<T>`: the constraint
+                // is what keeps this unambiguous in a `.tsx` twin, where a
+                // bare type parameter list can read as a JSX element.
+                type_params: Some(Box::new(TsTypeParamDecl {
+                    span: DUMMY_SP,
+                    params: vec![TsTypeParam {
+                        span: DUMMY_SP,
+                        name: t.clone(),
+                        is_in: false,
+                        is_out: false,
+                        is_const: false,
+                        constraint: Some(keyword(TsKeywordTypeKind::TsNumberKeyword)),
+                        default: None,
+                    }],
+                })),
+                return_type: Some(ann(Box::new(TsType::TsTypePredicate(TsTypePredicate {
+                    span: DUMMY_SP,
+                    asserts: false,
+                    param_name: TsThisTypeOrIdent::Ident(v.clone()),
+                    type_ann: Some(ann(Box::new(TsType::TsTypeRef(TsTypeRef {
+                        span: DUMMY_SP,
+                        type_name: TsEntityName::Ident(t),
+                        type_params: None,
+                    })))),
+                })))),
+            }),
+        }))
     }
 }
 
