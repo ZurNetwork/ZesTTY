@@ -235,6 +235,127 @@ fn missing_literal_arm_fails_tsc_naming_the_literal() {
 }
 
 #[test]
+fn ranged_match_over_closed_union_passes_tsc() {
+    // 0.5.0 range arms, the payload case: every member of a closed numeric
+    // literal union is covered by SOME range, so the keystone discharges
+    // and no `_` is needed. The type-predicate shape is what makes this
+    // possible — a `switch`/`===` expansion would emit TS2678/TS2367 for
+    // every enumerated value not in the union.
+    let (ts_path, _) = compile_to("match_range_basic.zts", "exit_range_basic.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected exhaustive ranged match:\n{text}");
+
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("__ztsAbsurd"),
+        "an exhaustive ranged match must still carry the keystone:\n{code}"
+    );
+    assert!(
+        code.contains("__ztsInRange<__ztsRange0>(__m, 200, 299)"),
+        "range arm must lower to the type-predicate call:\n{code}"
+    );
+    // The alias is a real, erased literal union — not a computed type.
+    assert!(
+        code.contains("type __ztsRange0 = 200 | 201 |"),
+        "range alias must enumerate its members:\n{code}"
+    );
+}
+
+#[test]
+fn ranged_match_missing_coverage_fails_tsc_naming_the_value() {
+    // Delete one range arm: the uncovered member must survive to the
+    // keystone and be NAMED, exactly as a missing literal arm is today.
+    let (ts_path, _) = compile_to("match_range_basic.zts", "exit_range_gap.ts");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    let broken = code.replace(
+        "if (__ztsInRange<__ztsRange3>(__m, 500, 599)) {",
+        "if (false as boolean) {",
+    );
+    assert_ne!(code, broken, "fixture drifted; update the arm surgery");
+    let broken_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("exit_range_gap_broken.ts");
+    std::fs::write(&broken_path, broken).unwrap();
+    let (ok, text) = tsc(&broken_path);
+    assert!(!ok, "keystone must reject an uncovered union member");
+    assert!(
+        text.contains("TS2345") && text.contains("500"),
+        "tsc must name the uncovered value:\n{text}"
+    );
+}
+
+#[test]
+fn ranged_match_over_open_number_needs_a_wildcard() {
+    // The compiler NEVER decides whether `_` is required — tsc does. Over
+    // an open `number`, a range proves nothing, so the keystone fires...
+    let (ts_path, _) = compile_to("match_range_open_number.zts", "exit_range_open.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(!ok, "a range cannot discharge an open `number` scrutinee");
+    assert!(
+        text.contains("TS2345") && text.contains("number"),
+        "tsc must name the undischarged type:\n{text}"
+    );
+
+    // ... and the same shape WITH a `_` passes, keystone removed.
+    let (ok_path, _) = compile_to("match_range_mixed.zts", "exit_range_mixed.ts");
+    let (ok, text) = tsc(&ok_path);
+    assert!(ok, "tsc rejected a `_`-terminated ranged match:\n{text}");
+    let code = std::fs::read_to_string(&ok_path).unwrap();
+    assert!(
+        !code.contains("__ztsAbsurd"),
+        "`_` must still replace the keystone in a ranged match:\n{code}"
+    );
+    // The bounds the author wrote reach the call verbatim; only the erased
+    // alias is enumerated.
+    assert!(
+        code.contains("(__m, 0x10, 0x1f)"),
+        "range bound literals must keep their raw form:\n{code}"
+    );
+}
+
+#[test]
+fn ranged_match_runs_with_correct_semantics() {
+    // The type says "one of these integer literals"; only executing the
+    // output proves the runtime agrees — 404.5, NaN and "404" must all
+    // fall through a `400..=499` arm.
+    let (ts_path, _) = compile_to("match_range_exec.zts", "exit_range_exec.ts");
+    let out = Command::new("node")
+        .arg(&ts_path)
+        .output()
+        .expect("failed to spawn node");
+    assert!(
+        out.status.success(),
+        "ranged match produced wrong runtime values:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn ranged_match_inline_preamble_is_self_contained() {
+    // The --inline-preamble opt-out must cover __ztsInRange too, or a
+    // dep-less consumer (plain zts-check, the language server) gets a
+    // missing-module error the author cannot act on.
+    let fixture_path = repo_root().join("tests/fixtures/match_range_basic.zts");
+    let opts = zestty::Options {
+        preamble_import: false,
+        ..Default::default()
+    };
+    let (out, diags) = common::compile_fixture_with(&fixture_path, opts)
+        .unwrap_or_else(|(e, d)| panic!("match_range_basic failed to compile: {e}\n{d}"));
+    assert_eq!(diags, "");
+    assert!(
+        !out.code.contains("@zestty/core"),
+        "inline mode must not import the core package:\n{}",
+        out.code
+    );
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    std::fs::create_dir_all(dir).unwrap();
+    let ts_path = dir.join("exit_range_inline.ts");
+    std::fs::write(&ts_path, &out.code).unwrap();
+    let (ok, text) = tsc_with(&ts_path, &["--strict"]);
+    assert!(ok, "tsc rejected self-contained ranged output:\n{text}");
+}
+
+#[test]
 fn wildcard_match_passes_tsc_and_disables_keystone() {
     let (ts_path, _) = compile_to("match_wildcard.zts", "exit_wildcard.ts");
     let (ok, text) = tsc(&ts_path);

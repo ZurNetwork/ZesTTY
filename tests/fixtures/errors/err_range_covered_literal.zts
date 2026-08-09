@@ -1,0 +1,5 @@
+const a = match (n) {
+  400..=499 => "client",
+  404 => "already covered by the range above",
+  _ => "other",
+};

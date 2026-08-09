@@ -1,0 +1,16 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_range_mode_mix.zts
+---
+error: cannot mix range arms and variant arms in one match (a range arm matches a number, a variant arm matches a `kind` tag)
+ --> tests/fixtures/errors/err_range_mode_mix.zts:6:3
+  |
+6 |   0..=9 => 1,
+  |   ^^^^^
+
+error: cannot mix variant arms and literal arms in one match
+  --> tests/fixtures/errors/err_range_mode_mix.zts:10:3
+   |
+10 |   Circle { radius } => radius,
+   |   ^^^^^^^^^^^^^^^^^

@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_range_overlap.zts
+---
+error: overlapping range arms: `450..=599` overlaps the earlier range `400..=499`; range arms in one match must be disjoint
+ --> tests/fixtures/errors/err_range_overlap.zts:3:3
+  |
+3 |   450..=599 => "overlaps the arm above",
+  |   ^^^^^^^^^

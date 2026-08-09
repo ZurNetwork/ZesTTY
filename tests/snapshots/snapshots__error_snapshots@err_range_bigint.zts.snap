@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_range_bigint.zts
+---
+error: bigint bounds are not supported in zts range patterns in v1; use number literals (`400..=499`) or separate bigint arms
+ --> tests/fixtures/errors/err_range_bigint.zts:2:3
+  |
+2 |   1n..=9n => "bigint bounds are not supported in v1",
+  |   ^^

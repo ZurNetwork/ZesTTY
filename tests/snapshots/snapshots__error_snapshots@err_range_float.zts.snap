@@ -1,0 +1,16 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_range_float.zts
+---
+error: range bounds must be integer literals; `1.5` is a decimal or exponent form (a range enumerates whole numbers, so a fractional bound has no meaning)
+ --> tests/fixtures/errors/err_range_float.zts:2:3
+  |
+2 |   1.5..=9 => "fractional",
+  |   ^^^^^^^
+
+error: range bounds must be integer literals; `4e2` is a decimal or exponent form (a range enumerates whole numbers, so a fractional bound has no meaning)
+ --> tests/fixtures/errors/err_range_float.zts:6:3
+  |
+6 |   4e2..=4e3 => "exponent",
+  |   ^^^^^^^^^

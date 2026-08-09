@@ -1,0 +1,11 @@
+enum Shape {
+  Circle { radius: number },
+}
+const a = match (s) {
+  Circle { radius } => radius,
+  0..=9 => 1,
+};
+const b = match (s) {
+  0..=9 => 1,
+  Circle { radius } => radius,
+};

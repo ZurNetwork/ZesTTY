@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_range_exclusive.zts
+---
+error: zts has no exclusive range pattern: write `lo..=hi` (inclusive). `..` cannot be a range operator without breaking `4..toString()`
+ --> tests/fixtures/errors/err_range_exclusive.zts:2:3
+  |
+2 |   400..499 => "zts has no exclusive range",
+  |   ^^^^
