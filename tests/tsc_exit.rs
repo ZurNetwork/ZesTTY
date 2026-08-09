@@ -235,6 +235,217 @@ fn missing_literal_arm_fails_tsc_naming_the_literal() {
 }
 
 #[test]
+fn zts_type_shadow_cannot_forge_exhaustiveness() {
+    // SECURITY (0.5.0 review, finding 1). Hygiene is not TS-type-aware, so
+    // a user `type __ztsRange0 = number` is neither renamed nor a tsc
+    // error — it silently re-points the range predicate and makes a match
+    // covering 2 of 5 members certify as exhaustive. Reproduced before the
+    // fix: tsc exited 0 and the program threw at runtime.
+    //
+    // The compile must now fail in the SEMANTIC pass, so no TypeScript
+    // ever exists for tsc to bless.
+    let path = repo_root().join("tests/fixtures/errors/err_zts_type_shadow.zts");
+    let (_, diags) = common::compile_fixture(&path)
+        .expect_err("a __zts type-plane shadow must not compile at all");
+    assert!(
+        diags.contains("reserved for zts-generated code"),
+        "the shadow must be rejected by the __zts reservation:\n{diags}"
+    );
+    // Every type-name binder in the AST, one diagnostic each: type alias,
+    // type parameter, interface, namespace, module-scope alias, and the
+    // three `import X = Ns.T` routes (plain, `export import`, nested
+    // namespace) that survived the first cut of this fix.
+    assert_eq!(
+        diags.matches("reserved for zts-generated code").count(),
+        8,
+        "every type-name binder must be covered:\n{diags}"
+    );
+
+    // Each import-equals route on its own, so a regression in one cannot
+    // hide behind the others — and each must die in the SEMANTIC pass,
+    // with no TypeScript produced for tsc to bless.
+    for (name, src) in [
+        (
+            "plain",
+            "namespace H { export type W = number; }\n\
+             namespace A {\n\
+             \x20 import __ztsRange0 = H.W;\n\
+             \x20 export const u: __ztsRange0 = 1;\n\
+             }\n",
+        ),
+        (
+            "export import",
+            "namespace H { export type W = number; }\n\
+             export namespace A { export import __ztsRange0 = H.W; }\n",
+        ),
+        (
+            "nested namespace",
+            "namespace H { export type W = number; }\n\
+             export namespace A { export namespace B {\n\
+             \x20 import __ztsRange0 = H.W;\n\
+             \x20 export const u: __ztsRange0 = 1;\n\
+             } }\n",
+        ),
+    ] {
+        let err = zestty::compile_source("ieq.zts", src.to_string(), Default::default())
+            .expect_err(&format!("{name} import-equals shadow must not compile"));
+        assert!(
+            err.diagnostics.contains("reserved for zts-generated code"),
+            "{name}: {}",
+            err.diagnostics
+        );
+    }
+
+    // ... and the shadow really was load-bearing: rename the alias and the
+    // very same 2-of-5 match is the TS2345 it always should have been.
+    let renamed = "type Code = 1 | 2 | 3 | 4 | 5;\n\
+                   export const f = (c: Code): string => {\n\
+                   \x20 type NotReserved = number;\n\
+                   \x20 const _use: NotReserved = 1;\n\
+                   \x20 return match (c) {\n\
+                   \x20   1..=2 => \"low\",\n\
+                   \x20 };\n\
+                   };\n";
+    let out = zestty::compile_source(
+        "shadow_renamed.zts",
+        renamed.to_string(),
+        Default::default(),
+    )
+    .expect("the renamed form must still compile");
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    std::fs::create_dir_all(dir).unwrap();
+    let ts_path = dir.join("exit_shadow_renamed.ts");
+    std::fs::write(&ts_path, &out.code).unwrap();
+    let (ok, text) = tsc(&ts_path);
+    assert!(!ok, "a 2-of-5 ranged match must not typecheck");
+    assert!(
+        text.contains("TS2345") && text.contains("3"),
+        "tsc must name the uncovered members:\n{text}"
+    );
+}
+
+#[test]
+fn ranged_match_over_closed_union_passes_tsc() {
+    // 0.5.0 range arms, the payload case: every member of a closed numeric
+    // literal union is covered by SOME range, so the keystone discharges
+    // and no `_` is needed. The type-predicate shape is what makes this
+    // possible — a `switch`/`===` expansion would emit TS2678/TS2367 for
+    // every enumerated value not in the union.
+    let (ts_path, _) = compile_to("match_range_basic.zts", "exit_range_basic.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected exhaustive ranged match:\n{text}");
+
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("__ztsAbsurd"),
+        "an exhaustive ranged match must still carry the keystone:\n{code}"
+    );
+    assert!(
+        code.contains("__ztsInRange<__ztsRange0>(__m, 200, 299)"),
+        "range arm must lower to the type-predicate call:\n{code}"
+    );
+    // The alias is a real, erased literal union — not a computed type.
+    assert!(
+        code.contains("type __ztsRange0 = 200 | 201 |"),
+        "range alias must enumerate its members:\n{code}"
+    );
+}
+
+#[test]
+fn ranged_match_missing_coverage_fails_tsc_naming_the_value() {
+    // Delete one range arm: the uncovered member must survive to the
+    // keystone and be NAMED, exactly as a missing literal arm is today.
+    let (ts_path, _) = compile_to("match_range_basic.zts", "exit_range_gap.ts");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    let broken = code.replace(
+        "if (__ztsInRange<__ztsRange3>(__m, 500, 599)) {",
+        "if (false as boolean) {",
+    );
+    assert_ne!(code, broken, "fixture drifted; update the arm surgery");
+    let broken_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("exit_range_gap_broken.ts");
+    std::fs::write(&broken_path, broken).unwrap();
+    let (ok, text) = tsc(&broken_path);
+    assert!(!ok, "keystone must reject an uncovered union member");
+    assert!(
+        text.contains("TS2345") && text.contains("500"),
+        "tsc must name the uncovered value:\n{text}"
+    );
+}
+
+#[test]
+fn ranged_match_over_open_number_needs_a_wildcard() {
+    // The compiler NEVER decides whether `_` is required — tsc does. Over
+    // an open `number`, a range proves nothing, so the keystone fires...
+    let (ts_path, _) = compile_to("match_range_open_number.zts", "exit_range_open.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(!ok, "a range cannot discharge an open `number` scrutinee");
+    assert!(
+        text.contains("TS2345") && text.contains("number"),
+        "tsc must name the undischarged type:\n{text}"
+    );
+
+    // ... and the same shape WITH a `_` passes, keystone removed.
+    let (ok_path, _) = compile_to("match_range_mixed.zts", "exit_range_mixed.ts");
+    let (ok, text) = tsc(&ok_path);
+    assert!(ok, "tsc rejected a `_`-terminated ranged match:\n{text}");
+    let code = std::fs::read_to_string(&ok_path).unwrap();
+    assert!(
+        !code.contains("__ztsAbsurd"),
+        "`_` must still replace the keystone in a ranged match:\n{code}"
+    );
+    // The bounds the author wrote reach the call verbatim; only the erased
+    // alias is enumerated.
+    assert!(
+        code.contains("(__m, 0x10, 0x1f)"),
+        "range bound literals must keep their raw form:\n{code}"
+    );
+}
+
+#[test]
+fn ranged_match_runs_with_correct_semantics() {
+    // The type says "one of these integer literals"; only executing the
+    // output proves the runtime agrees — 404.5, NaN and "404" must all
+    // fall through a `400..=499` arm.
+    let (ts_path, _) = compile_to("match_range_exec.zts", "exit_range_exec.ts");
+    let out = Command::new("node")
+        .arg(&ts_path)
+        .output()
+        .expect("failed to spawn node");
+    assert!(
+        out.status.success(),
+        "ranged match produced wrong runtime values:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn ranged_match_inline_preamble_is_self_contained() {
+    // The --inline-preamble opt-out must cover __ztsInRange too, or a
+    // dep-less consumer (plain zts-check, the language server) gets a
+    // missing-module error the author cannot act on.
+    let fixture_path = repo_root().join("tests/fixtures/match_range_basic.zts");
+    let opts = zestty::Options {
+        preamble_import: false,
+        ..Default::default()
+    };
+    let (out, diags) = common::compile_fixture_with(&fixture_path, opts)
+        .unwrap_or_else(|(e, d)| panic!("match_range_basic failed to compile: {e}\n{d}"));
+    assert_eq!(diags, "");
+    assert!(
+        !out.code.contains("@zestty/core"),
+        "inline mode must not import the core package:\n{}",
+        out.code
+    );
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"));
+    std::fs::create_dir_all(dir).unwrap();
+    let ts_path = dir.join("exit_range_inline.ts");
+    std::fs::write(&ts_path, &out.code).unwrap();
+    let (ok, text) = tsc_with(&ts_path, &["--strict"]);
+    assert!(ok, "tsc rejected self-contained ranged output:\n{text}");
+}
+
+#[test]
 fn wildcard_match_passes_tsc_and_disables_keystone() {
     let (ts_path, _) = compile_to("match_wildcard.zts", "exit_wildcard.ts");
     let (ok, text) = tsc(&ts_path);
@@ -449,6 +660,102 @@ fn union_guard_is_es5_clean() {
     let (ts_path, _) = compile_to("union_basic.zts", "exit_union_es2015.ts");
     let (ok, text) = tsc_with(&ts_path, &["--strict", "--target", "es2015"]);
     assert!(ok, "union guard must typecheck at --target es2015:\n{text}");
+}
+
+#[test]
+fn numeric_union_passes_tsc_and_guard_narrows() {
+    // 0.5.0 numeric members: `has` takes a `number` and narrows a raw wire
+    // value into the vocabulary, the closed side stays exhaustively
+    // matchable, and impls still merge into the same factory const.
+    let (ts_path, _) = compile_to("union_numeric.zts", "exit_union_numeric.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected numeric union output:\n{text}");
+
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("has: (__ztsRaw: number): __ztsRaw is HttpStatus"),
+        "an all-numeric union's guard must take a number:\n{code}"
+    );
+    // The ES5-clean guard shape and the cast-the-ARGUMENT discipline are
+    // unchanged: a receiver cast would need parens the fixer strips.
+    assert!(
+        code.contains("HttpStatus.values.indexOf(__ztsRaw as HttpStatus) !== -1"),
+        "guard shape must be unchanged for numeric members:\n{code}"
+    );
+    let (ok, text) = tsc_with(&ts_path, &["--strict", "--target", "es2015"]);
+    assert!(
+        ok,
+        "numeric union guard must typecheck at --target es2015:\n{text}"
+    );
+}
+
+#[test]
+fn numeric_union_guard_rejects_a_string() {
+    // The guard's parameter type comes from the member SHAPES: an
+    // all-numeric vocabulary must not silently accept a string.
+    let (ts_path, _) = compile_to("union_numeric.zts", "exit_union_numeric_arg.ts");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    let bad = format!("{code}\nHttpStatus.has(\"404\");\n");
+    let bad_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("exit_union_numeric_bad.ts");
+    std::fs::write(&bad_path, bad).unwrap();
+    let (ok, text) = tsc(&bad_path);
+    assert!(!ok, "a numeric union's has() must reject a string");
+    assert!(text.contains("TS2345"), "unexpected failure:\n{text}");
+}
+
+#[test]
+fn mixed_union_passes_tsc_and_guard_takes_both() {
+    let (ts_path, _) = compile_to("union_mixed.zts", "exit_union_mixed.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected mixed union output:\n{text}");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("has: (__ztsRaw: string | number): __ztsRaw is Ans"),
+        "a mixed union's guard must take both primitives:\n{code}"
+    );
+}
+
+#[test]
+fn string_union_output_is_byte_identical() {
+    // The 0.5.0 member-shape change must not move a single byte for the
+    // vocabularies that already existed. (The snapshots pin this too; this
+    // one says it out loud where a reviewer will look.)
+    let (ts_path, _) = compile_to("union_basic.zts", "exit_union_unchanged.ts");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("has: (__ztsRaw: string): __ztsRaw is DeleteOutcome"),
+        "an all-string union's guard must still take a string:\n{code}"
+    );
+}
+
+#[test]
+fn numeric_union_and_ranges_compose() {
+    // THE COMPOSITION KEYSTONE: wire guard -> closed numeric vocabulary ->
+    // exhaustive RANGED match, all proven by tsc with no `_` anywhere.
+    let (ts_path, _) = compile_to("union_range_composition.zts", "exit_union_range.ts");
+    let (ok, text) = tsc(&ts_path);
+    assert!(ok, "tsc rejected the union+range composition:\n{text}");
+    let code = std::fs::read_to_string(&ts_path).unwrap();
+    assert!(
+        code.contains("__ztsAbsurd"),
+        "the composition must keep the keystone live:\n{code}"
+    );
+
+    // Delete the 3xx range arm: the members it covered must survive to the
+    // keystone and be named.
+    let broken = code.replace(
+        "if (__ztsInRange<__ztsRange1>(__m, 300, 399)) {",
+        "if (false as boolean) {",
+    );
+    assert_ne!(code, broken, "fixture drifted; update the arm surgery");
+    let broken_path = Path::new(env!("CARGO_TARGET_TMPDIR")).join("exit_union_range_broken.ts");
+    std::fs::write(&broken_path, broken).unwrap();
+    let (ok, text) = tsc(&broken_path);
+    assert!(!ok, "deleting a range arm must break exhaustiveness");
+    assert!(
+        text.contains("TS2345") && text.contains("301"),
+        "tsc must name the uncovered member:\n{text}"
+    );
 }
 
 #[test]

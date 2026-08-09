@@ -33,6 +33,24 @@ fn inline_preamble_snapshot() {
 }
 
 #[test]
+fn range_inline_preamble_snapshot() {
+    // `--inline-preamble` has to cover `__ztsInRange` as well as
+    // `__ztsAbsurd` (0.5.0 ranges), or a dep-less consumer gets a
+    // missing-module error. Pin the emitted const: `unknown` parameter and
+    // the `% 1 === 0` integer gate are both load-bearing.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/match_range_basic.zts");
+    let opts = zestty::Options {
+        preamble_import: false,
+        ..Default::default()
+    };
+    let (out, diags) = common::compile_fixture_with(&path, opts)
+        .unwrap_or_else(|(e, d)| panic!("match_range_basic failed: {e}\n{d}"));
+    assert_eq!(diags, "");
+    insta::assert_snapshot!(out.code);
+}
+
+#[test]
 fn error_snapshots() {
     insta::glob!("fixtures/errors/*.zts", |path| {
         let (_, diags) = common::compile_fixture(path)

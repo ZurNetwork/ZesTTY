@@ -1,0 +1,24 @@
+// THE COMPOSITION KEYSTONE of 0.5.0: a numeric `union` declares a closed
+// vocabulary, its `has` guard narrows a raw wire value into it, and a
+// ranged `match` is exhaustive over it — proven by tsc, with no `_` and
+// therefore with the exhaustiveness keystone still live.
+//
+// Neither half is worth much alone: ranges over an open `number` always
+// need a `_` (which disables the keystone for the whole match), and a
+// numeric union without ranges means hand-listing every member.
+union HttpStatus = 200 | 201 | 204 | 301 | 404 | 418 | 500 | 503;
+
+export function toHttpStatus(raw: number): HttpStatus {
+  return HttpStatus.has(raw) ? raw : 500;
+}
+
+export function statusClass(s: HttpStatus): string {
+  return match (s) {
+    200..=299 => "success",
+    300..=399 => "redirect",
+    400..=499 => "client error",
+    500..=599 => "server error",
+  };
+}
+
+console.log(statusClass(toHttpStatus(404)));

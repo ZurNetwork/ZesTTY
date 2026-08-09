@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_range_width.zts
+---
+error: range `0..=2000` spans 2001 values, over the zts limit of 1024: a range arm expands to one literal type per value, so an unbounded range would exhaust memory in the compiler and the editor. Match on `number` with a `_` arm instead.
+ --> tests/fixtures/errors/err_range_width.zts:4:3
+  |
+4 |   0..=2000 => "wide",
+  |   ^^^^^^^^

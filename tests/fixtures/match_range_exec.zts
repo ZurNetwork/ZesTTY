@@ -1,0 +1,68 @@
+// Executed by tests/tsc_exit.rs under node: range arms must produce the
+// RIGHT VALUE at runtime, not merely typecheck. The runtime guarantee is
+// narrower than the type: a range arm claims a set of INTEGER literals, so
+// a fractional or non-numeric scrutinee has to fall through.
+
+function expect(name: string, got: unknown, want: unknown): void {
+  if (got !== want) {
+    throw new globalThis.Error(
+      `${name}: got ${String(got)}, want ${String(want)}`,
+    );
+  }
+}
+
+function classify(n: number): string {
+  return match (n) {
+    400..=499 => "client",
+    -3..=-1 => "small negative",
+    7..=7 => "lucky",
+    _ => "other",
+  };
+}
+
+expect("inside the range", classify(404), "client");
+expect("lower bound is inclusive", classify(400), "client");
+expect("upper bound is inclusive", classify(499), "client");
+expect("just below", classify(399), "other");
+expect("just above", classify(500), "other");
+
+// A fractional value sits numerically inside 400..=499 but is not one of
+// the literals the arm claims — the `% 1 === 0` gate is what keeps the
+// type honest.
+expect("fractional inside the bounds", classify(404.5), "other");
+expect("NaN", classify(globalThis.NaN), "other");
+expect("Infinity", classify(globalThis.Infinity), "other");
+
+expect("negative range", classify(-2), "small negative");
+expect("negative just outside", classify(-4), "other");
+expect("degenerate range", classify(7), "lucky");
+expect("degenerate range miss", classify(8), "other");
+
+// Mixed scrutinee: the predicate's parameter is `unknown` precisely so a
+// string can reach it and be rejected.
+function classifyMixed(v: number | string): string {
+  return match (v) {
+    400..=499 => "client",
+    "unknown" => "unknown",
+    _ => "other",
+  };
+}
+
+expect("string that looks like a code", classifyMixed("404"), "other");
+expect("string member still matches", classifyMixed("unknown"), "unknown");
+expect("number member still matches", classifyMixed(404), "client");
+
+// First match wins, in source order — a literal arm before a range that
+// contains it stays reachable.
+function firstMatchWins(n: number): string {
+  return match (n) {
+    404 => "not found",
+    400..=499 => "client",
+    _ => "other",
+  };
+}
+
+expect("earlier literal wins", firstMatchWins(404), "not found");
+expect("range still catches the rest", firstMatchWins(403), "client");
+
+console.log("match_range_exec: all assertions passed");

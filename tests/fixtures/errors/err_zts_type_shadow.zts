@@ -1,0 +1,60 @@
+// The `__zts` namespace is reserved on the TYPE plane too (0.5.0 security
+// round, finding 1). Hygiene is not TS-type-aware, so a user type
+// declaration that collides with a generated one is not renamed and not a
+// tsc error — it silently swaps in a DIFFERENT PROOF. Each of these four
+// declaration forms could re-point a hoisted `__ztsRangeN` (or a
+// `constrict` helper) and forge exhaustiveness.
+type Code = 1 | 2 | 3 | 4 | 5;
+
+// 1. type alias in an inner scope
+export const byAlias = (c: Code): string => {
+  type __ztsRange0 = number;
+  return match (c) {
+    1..=2 => "low",
+    _ => "other",
+  };
+};
+
+// 2. type parameter — shadows the whole signature and body
+export const byTypeParam = <__ztsRange1 extends number>(c: Code): string =>
+  match (c) {
+    1..=2 => "low",
+    _ => "other",
+  };
+
+// 3. interface
+interface __ztsRange2 {
+  x: number;
+}
+
+// 4. namespace — the same shadow one indirection away
+namespace __ztsHelpers {
+  export type X = number;
+}
+
+// 5. module scope, for completeness
+type __ztsRange3 = number;
+
+// 6. `import X = Ns.Type` — the LAST type-name binder in the AST, and the
+// one that survived the first cut of this fix. All three routes the
+// security round found are covered: plain, `export import`, and nested
+// namespaces.
+namespace Wide {
+  export type W = number;
+}
+
+namespace Attack {
+  import __ztsRange4 = Wide.W;
+  export const use: __ztsRange4 = 1;
+}
+
+namespace ExportAttack {
+  export import __ztsRange5 = Wide.W;
+}
+
+namespace Outer {
+  export namespace Inner {
+    import __ztsRange6 = Wide.W;
+    export const use: __ztsRange6 = 1;
+  }
+}

@@ -1,0 +1,31 @@
+// The shapes that are not the http-status case: negative bounds, the
+// degenerate `lo == hi` range, a literal arm BEFORE a range that contains
+// it (specific-case-first, which stays legal), and a `_` tail over an open
+// `number` scrutinee.
+export function describe(n: number): string {
+  return match (n) {
+    404 => "not found",
+    400..=499 => "client error",
+    -3..=-1 => "small negative",
+    0..=0 => "zero",
+    7..=7 => "lucky",
+    _ => "other",
+  };
+}
+
+// Radix-prefixed bounds are integer literals by construction, and the
+// literals the author wrote survive into the call (only the erased alias
+// is enumerated).
+//
+// Range BOUNDS are checked by their written form, so `4e2..=4e3` is an
+// error even though both values are whole: a bound is the start of an
+// enumeration and has to read like one. `union` MEMBERS are checked by
+// value instead — they are never enumerated, and the value rule is what
+// makes `1` and `1.0` a duplicate-member error rather than a silently
+// deduplicated type.
+export function mask(n: number): string {
+  return match (n) {
+    0x10..=0x1f => "low nibble set",
+    _ => "other",
+  };
+}

@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_union_bigint.zts
+---
+error: bigint `union` members are not supported: the `values` tuple and the `has` guard carry strings and numbers only. Use a number member, or a plain type alias for a bigint vocabulary.
+ --> tests/fixtures/errors/err_union_bigint.zts:1:13
+  |
+1 | union Big = 1n | 2n;
+  |             ^^

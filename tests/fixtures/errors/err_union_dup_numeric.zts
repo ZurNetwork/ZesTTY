@@ -1,0 +1,5 @@
+// `-0` and `0` are the same value in JS; `1` and `1.0` are the same
+// literal type to TypeScript. Both would silently shrink the vocabulary.
+union A = 0 | -0;
+union B = 1 | 1.0;
+union C = 200 | 404 | 200;

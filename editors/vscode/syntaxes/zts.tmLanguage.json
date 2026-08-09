@@ -7,6 +7,9 @@
       "include": "#zts-match-expression"
     },
     {
+      "include": "#zts-range-pattern"
+    },
+    {
       "include": "#zts-enum-declaration"
     },
     {
@@ -35,6 +38,21 @@
       "captures": {
         "1": {
           "name": "keyword.control.match.zts"
+        }
+      }
+    },
+    "zts-range-pattern": {
+      "comment": "`lo..=hi` — the inclusive range arm pattern (0.5.0). Anchored on the arm's `=>` so the rule only fires in match-arm position; `..=` is not valid TypeScript anywhere, so no vanilla construct can be recoloured either way. Bounds are integer literals (decimal or radix-prefixed) with an optional `-`.",
+      "match": "(-?\\b(?:0[xXoObB][0-9A-Fa-f_]+|[0-9][0-9_]*)\\b)\\s*(\\.\\.=)\\s*(-?\\b(?:0[xXoObB][0-9A-Fa-f_]+|[0-9][0-9_]*)\\b)(?=\\s*=>)",
+      "captures": {
+        "1": {
+          "name": "constant.numeric.zts"
+        },
+        "2": {
+          "name": "keyword.operator.range.zts"
+        },
+        "3": {
+          "name": "constant.numeric.zts"
         }
       }
     },
@@ -152,7 +170,7 @@
       ]
     },
     "zts-union-declaration": {
-      "comment": "`union Name = 'a' | 'b';` — contextual, same-line identifier + `=` commits (mirrors the `type`-alias rule; `const union = 2;` stays vanilla)",
+      "comment": "`union Name = 'a' | 'b';` / `union Name = 200 | 404;` — contextual, same-line identifier + `=` commits (mirrors the `type`-alias rule; `const union = 2;` stays vanilla). Members are string or number literals (0.5.0) and are coloured by the embedded TypeScript grammar, which already scopes both.",
       "match": "(?<![.$])\\b(union)\\b\\s+([A-Za-z_$][\\w$]*)\\b(?=\\s*=)",
       "captures": {
         "1": {

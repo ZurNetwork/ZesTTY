@@ -114,3 +114,42 @@ test("isNonEmpty narrows and gates (issue Phase 7 item 3)", async () => {
   assert.equal(isNonEmpty([1]), true);
   assert.equal(isNonEmpty([]), false);
 });
+
+test("__ztsInRange gates on integers inside the closed bounds (0.5.0 ranges)", async () => {
+  const { __ztsInRange } = await import("../dist/index.js");
+
+  // Inclusive on both ends.
+  assert.equal(__ztsInRange(400, 400, 499), true);
+  assert.equal(__ztsInRange(499, 400, 499), true);
+  assert.equal(__ztsInRange(399, 400, 499), false);
+  assert.equal(__ztsInRange(500, 400, 499), false);
+
+  // Degenerate range (`lo == hi` is legal in zts).
+  assert.equal(__ztsInRange(7, 7, 7), true);
+
+  // Negative bounds.
+  assert.equal(__ztsInRange(-2, -3, -1), true);
+  assert.equal(__ztsInRange(0, -3, -1), false);
+
+  // `-0` is `0` for every comparison in JS, and `-0 % 1` is `-0 === 0`.
+  assert.equal(__ztsInRange(-0, 0, 0), true);
+
+  // Non-integers never match — this is what makes a range arm safe to
+  // claim a set of integer literal types.
+  assert.equal(__ztsInRange(404.5, 400, 499), false);
+  assert.equal(__ztsInRange(400.0000001, 400, 499), false);
+
+  // NaN / Infinity: `% 1` is NaN, so the integer gate rejects both.
+  assert.equal(__ztsInRange(NaN, 400, 499), false);
+  assert.equal(__ztsInRange(Infinity, 400, 499), false);
+  assert.equal(__ztsInRange(-Infinity, -499, -400), false);
+
+  // Non-numbers fall at the typeof gate — the parameter is `unknown`
+  // precisely so a mixed union can reach it.
+  assert.equal(__ztsInRange("404", 400, 499), false);
+  assert.equal(__ztsInRange(null, 400, 499), false);
+  assert.equal(__ztsInRange(undefined, 400, 499), false);
+  assert.equal(__ztsInRange(true, 0, 1), false);
+  assert.equal(__ztsInRange(404n, 400, 499), false);
+  assert.equal(__ztsInRange([404], 400, 499), false);
+});

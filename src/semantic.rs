@@ -5,7 +5,7 @@
 //! reject zts constructs that are syntactically valid but outside the
 //! locked Phase 1 grammar, with spans pointing at the original `.zts`.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use swc_common::{Span, Spanned, errors::Handler};
 use swc_ecma_ast::*;
@@ -16,6 +16,34 @@ use swc_ecma_visit::{Visit, VisitWith};
 /// once the compiler runs inside a Node/Vite process. Reject early with a
 /// real diagnostic instead.
 const MAX_EXPR_DEPTH: usize = 2048;
+
+/// Widest `lo..=hi` range arm zts will lower, in values (`hi - lo + 1`).
+///
+/// This is a DoS control, not a nicety, and it is enforced HERE — before
+/// lowering allocates anything. A range arm expands to a type alias with
+/// one literal member per value, so an unbounded range (`0..=2000000000`)
+/// is billions of AST nodes: the language server would OOM on a keystroke.
+/// Fail closed with a diagnostic naming the width instead.
+///
+/// 1024 covers every realistic literal-union vocabulary (the whole HTTP
+/// 4xx/5xx space is 100 values each) with two orders of magnitude spare.
+pub const MAX_RANGE_WIDTH: i64 = 1024;
+
+/// Total enumerated range values allowed in ONE MODULE.
+///
+/// [`MAX_RANGE_WIDTH`] bounds a single arm; without a module-wide budget
+/// the same DoS just needs more arms. Measured on the 0.5.0 security
+/// round: 447 KB of *individually legal* disjoint range arms expanded to
+/// ~160 MB of generated TypeScript and 2.7 GB RSS — and the language
+/// server pays that on every keystroke, because it recompiles the whole
+/// document. 65_536 is ~64x the single-arm cap and two orders of
+/// magnitude above any real vocabulary; the diagnostic names both the
+/// running total and the cap so the author can see what they spent it on.
+pub const MAX_RANGE_TOTAL: i64 = 65_536;
+
+/// Bounds must be exactly representable as integers, so the enumeration
+/// `lo..=hi` is exact. `2^53 - 1`, JavaScript's `Number.MAX_SAFE_INTEGER`.
+const MAX_SAFE_INT: f64 = 9_007_199_254_740_991.0;
 
 /// Semantic checking failed; diagnostics were emitted via the handler.
 #[derive(Debug)]
@@ -50,6 +78,8 @@ pub fn check(module: &Module, handler: &Handler) -> Result<(), SemanticFailure> 
         enclosing_fn: EnclosingFn::None,
         next_fn_is_setter: false,
         sanctioned_impls: HashSet::new(),
+        range_values_total: 0,
+        range_total_reported: false,
     };
     module.visit_with(&mut checker);
 
@@ -109,6 +139,12 @@ struct Checker<'a> {
     /// (`if (c) impl ...`), which the list-based orphan check never sees
     /// and the lowering cannot merge.
     sanctioned_impls: HashSet<usize>,
+    /// Running total of values enumerated by range arms in this MODULE
+    /// (0.5.0 review, code finding 3 / security finding 2). The per-arm
+    /// width cap does not bound the aggregate; this does.
+    range_values_total: i64,
+    /// The module budget message is emitted once, not once per later arm.
+    range_total_reported: bool,
 }
 
 /// Hard cap on RENDERED zts diagnostics: each one re-renders its source
@@ -118,9 +154,27 @@ const MAX_DIAGNOSTICS: usize = 100;
 
 impl Checker<'_> {
     fn err(&mut self, span: Span, msg: &str) {
+        self.emit(span, msg, None);
+    }
+
+    /// `err` plus a secondary span. Both go through `emit` so the
+    /// diagnostic-suppression accounting has exactly one copy (0.5.0
+    /// review, code finding 5): a second hand-rolled copy is a cap that
+    /// drifts.
+    fn err_with_note(&mut self, span: Span, msg: &str, note_span: Span, note: &str) {
+        self.emit(span, msg, Some((note_span, note)));
+    }
+
+    fn emit(&mut self, span: Span, msg: &str, note: Option<(Span, &str)>) {
         self.errors += 1;
         match self.errors.cmp(&MAX_DIAGNOSTICS) {
-            std::cmp::Ordering::Less => self.handler.struct_span_err(span, msg).emit(),
+            std::cmp::Ordering::Less => {
+                let mut diag = self.handler.struct_span_err(span, msg);
+                if let Some((note_span, note)) = note {
+                    diag.span_note(note_span, note);
+                }
+                diag.emit();
+            }
             std::cmp::Ordering::Equal => self
                 .handler
                 .struct_span_err(span, "too many errors; further zts diagnostics suppressed")
@@ -129,19 +183,58 @@ impl Checker<'_> {
         }
     }
 
-    fn note_global_this_shadow(&mut self, ident: &Ident) {
-        if ident.sym == "globalThis" {
-            self.global_this_decls.push(ident.span);
+    /// A reachability error, naming the EARLIER ARM THE AUTHOR WROTE and
+    /// pointing a secondary span at it (0.5.0 review, code finding 4).
+    /// Naming the merged interval instead sends the author hunting for an
+    /// arm that does not exist in their source.
+    fn err_covered(&mut self, arm: SourceArm, prior: &Coverage, prefix: &str) {
+        match prior.source_hit(arm.lo, arm.hi) {
+            Some(earlier) => self.err_with_note(
+                arm.span,
+                &format!("{prefix} earlier arms (see `{earlier}`)"),
+                earlier.span,
+                "an earlier arm covering these values is here",
+            ),
+            None => self.err(arm.span, &format!("{prefix} earlier arms")),
         }
-        // The `__zts` prefix is documented as generated-code-only; a user
-        // binding named `__ztsValue` etc. would collide with pre-resolver
-        // lowerings that hygiene cannot protect (security-gate F9).
+    }
+
+    /// The `__zts` namespace is generated-code-only, on BOTH planes.
+    ///
+    /// On the value plane this closes security-gate F9: a user binding
+    /// named `__ztsValue` would collide with a pre-resolver lowering that
+    /// hygiene cannot protect.
+    ///
+    /// On the TYPE plane it closes a keystone false-green (0.5.0 security
+    /// round, finding 1). Hygiene is not TS-type-aware, so it will not
+    /// rename a user type declaration that collides with a generated one —
+    /// and a shadowed generated type is not a compile error, it is a
+    /// SILENTLY DIFFERENT PROOF. Reproduced: with
+    /// `type __ztsRange0 = number` in an inner scope, a range arm covering
+    /// 2 of 5 union members re-points its predicate at `number`, narrows
+    /// the scrutinee to `never`, and certifies the match exhaustive — tsc
+    /// exits 0 and the program throws at runtime. The same shape would
+    /// forge `__ztsExpect`/`__ztsEqual` for `constrict`.
+    ///
+    /// Every AST node that can bind a TYPE name routes here: type aliases,
+    /// interfaces, type parameters, namespaces, and `import X = Y.Z`. With
+    /// import-equals the set is complete — those five plus the value-plane
+    /// binders (classes, import specifiers, and everything
+    /// `note_global_this_shadow` already covered).
+    fn note_zts_reserved_ident(&mut self, ident: &Ident) {
         if ident.sym.starts_with("__zts") {
             self.err(
                 ident.span,
                 "identifiers starting with `__zts` are reserved for zts-generated code",
             );
         }
+    }
+
+    fn note_global_this_shadow(&mut self, ident: &Ident) {
+        if ident.sym == "globalThis" {
+            self.global_this_decls.push(ident.span);
+        }
+        self.note_zts_reserved_ident(ident);
         // `not` is a reserved word since 0.4.0 (Zuri, 2026-08-07): the
         // parser owns expression positions; bindings are rejected here so
         // every binding path (const/let/fn/class/params/imports) gets one
@@ -181,10 +274,22 @@ impl Checker<'_> {
 
         // A match is either variant-mode or literal-mode, never mixed;
         // `_` is legal in both but must be the LAST arm and appear once.
+        // Range arms (`400..=499`) are literal-mode arms.
         let mut seen_variants: HashSet<&swc_atoms::Atom> = HashSet::new();
         let mut seen_lits: HashSet<String> = HashSet::new();
         let mut mode: Option<&'static str> = None;
         let mut wildcard_seen = false;
+
+        // Syntactic reachability over the integer number line (0.5.0). tsc
+        // is SILENT about a range arm shadowed by an earlier one — nothing
+        // in the generated TS is ill-typed — so this is the compile-error
+        // class ranges bring with them. `covered` holds earlier range arms
+        // AND earlier integer literal arms; `ranges` holds only the range
+        // arms, because a literal written before a range that contains it
+        // is the deliberate specific-case-first idiom
+        // (`404 => …, 400..=499 => …`) and must keep working.
+        let mut covered = Coverage::default();
+        let mut ranges = Coverage::default();
 
         for arm in &m.arms {
             if wildcard_seen {
@@ -255,6 +360,62 @@ impl Checker<'_> {
                     };
                     if !seen_lits.insert(key) {
                         self.err(l.span, "duplicate literal match arm");
+                        // Already reported; letting it fall through to the
+                        // interval check would blame an earlier RANGE for
+                        // what is plainly a duplicate literal.
+                    } else if let Some(v) = integer_literal_value(&l.lit, l.neg) {
+                        let arm = SourceArm {
+                            lo: v,
+                            hi: v,
+                            span: l.span,
+                            is_range: false,
+                        };
+                        if ranges.overlap(v, v).is_some() {
+                            self.err_covered(
+                                arm,
+                                &ranges,
+                                &format!("unreachable arm: `{v}` is already covered by"),
+                            );
+                        }
+                        covered.insert(arm);
+                    }
+                }
+                MatchPat::Range(r) => {
+                    match mode {
+                        Some("variant") => self.err(
+                            r.span,
+                            "cannot mix range arms and variant arms in one match (a range arm \
+                             matches a number, a variant arm matches a `kind` tag)",
+                        ),
+                        _ => mode = Some("lit"),
+                    }
+                    if let Some((lo, hi)) = self.check_range_bounds(r) {
+                        let arm = SourceArm {
+                            lo,
+                            hi,
+                            span: r.span,
+                            is_range: true,
+                        };
+                        if covered.covering(lo, hi).is_some() {
+                            self.err_covered(
+                                arm,
+                                &covered,
+                                &format!(
+                                    "unreachable arm: every value of the range `{lo}..={hi}` is \
+                                     already matched by"
+                                ),
+                            );
+                        } else if ranges.overlap(lo, hi).is_some() {
+                            self.err_covered(
+                                arm,
+                                &ranges,
+                                &format!(
+                                    "overlapping range arms: `{lo}..={hi}` shares values with"
+                                ),
+                            );
+                        }
+                        covered.insert(arm);
+                        ranges.insert(arm);
                     }
                 }
             }
@@ -265,6 +426,132 @@ impl Checker<'_> {
             };
             arm.body.visit_with(&mut suspender);
         }
+    }
+
+    /// Validates one `lo..=hi` range arm and returns its integer bounds.
+    ///
+    /// Everything here fails CLOSED: on any error the arm contributes no
+    /// interval and no lowering runs (the compile already failed), so a
+    /// pathological range can never reach the enumeration in `lower.rs`.
+    fn check_range_bounds(&mut self, r: &MatchRangePat) -> Option<(i64, i64)> {
+        let lo = self.range_bound(&r.lo, r.lo_neg, r.lo.span)?;
+        let hi = self.range_bound(&r.hi, r.hi_neg, r.hi.span)?;
+
+        if lo > hi {
+            self.err(
+                r.span,
+                &format!(
+                    "range lower bound `{lo}` is greater than its upper bound `{hi}`; zts ranges \
+                     are inclusive and must be written low-to-high (`{hi}..={lo}`)"
+                ),
+            );
+            return None;
+        }
+
+        // Cannot overflow: both bounds are safe integers, so the width fits
+        // in i64 with room to spare.
+        let width = hi - lo + 1;
+        if width > MAX_RANGE_WIDTH {
+            self.err(
+                r.span,
+                &format!(
+                    "range `{lo}..={hi}` spans {width} values, over the zts limit of \
+                     {MAX_RANGE_WIDTH}: a range arm expands to one literal type per value, so an \
+                     unbounded range would exhaust memory in the compiler and the editor. Match \
+                     on `number` with a `_` arm instead."
+                ),
+            );
+            return None;
+        }
+
+        // Per-MODULE budget. The per-arm cap alone does not bound the
+        // expansion: the same attack just uses more arms, each of them
+        // individually legal (measured: 447 KB of source → ~160 MB of
+        // generated TS, 2.7 GB RSS, and the LS pays it per keystroke).
+        // Checked here, before any coverage bookkeeping or lowering
+        // allocation happens.
+        match self.range_values_total.checked_add(width) {
+            Some(total) if total <= MAX_RANGE_TOTAL => self.range_values_total = total,
+            _ => {
+                let total = self.range_values_total.saturating_add(width);
+                // Once per module: every later range arm would repeat the
+                // same budget message with the same number.
+                if !std::mem::replace(&mut self.range_total_reported, true) {
+                    self.err(
+                        r.span,
+                        &format!(
+                            "range arms in this module enumerate {total} values, over the zts \
+                             limit of {MAX_RANGE_TOTAL}: each value becomes a literal type in the \
+                             generated \
+                         TypeScript, and the language server re-expands all of them on every \
+                             keystroke. Narrow the ranges, or match on `number` with a `_` arm."
+                        ),
+                    );
+                }
+                return None;
+            }
+        }
+
+        Some((lo, hi))
+    }
+
+    /// One range bound: an INTEGER number literal, optionally negated. The
+    /// span is the BOUND's own (0.5.0 review, code finding 5) — pointing at
+    /// the whole range for a problem with one end of it makes the author
+    /// check both.
+    fn range_bound(&mut self, n: &Number, neg: bool, span: Span) -> Option<i64> {
+        // Decimal-point and exponent forms are rejected on the literal's
+        // RAW TEXT, not its value: `4e2` is integral (400) but is not an
+        // integer literal, and letting it through would mean `4e2..=4e2`
+        // silently enumerates `400`. Radix-prefixed literals are integer
+        // literals by construction — and `0x1E` contains an `E` that is a
+        // hex digit, not an exponent, so they must be excluded from the
+        // text scan.
+        //
+        // ASYMMETRY, deliberate (0.5.0 review, code finding 9): a `union`
+        // MEMBER is checked by VALUE (`fract() != 0`), a range BOUND by
+        // RAW TEXT. They answer different questions. A range bound is the
+        // start of an ENUMERATION, so its written form has to be one the
+        // reader can count from — `4e2..=4e3` reads like "4 to 4000" and
+        // enumerates 2601 values. A union member is just a literal type,
+        // never enumerated, and the value rule is what makes `1` and `1.0`
+        // collapse into the one duplicate-member error TypeScript would
+        // otherwise apply silently. See `visit_zts_union_decl` for the
+        // other half.
+        if let Some(raw) = n.raw.as_deref() {
+            let bytes = raw.as_bytes();
+            let radix_prefixed = bytes.len() > 1
+                && bytes[0] == b'0'
+                && matches!(bytes[1], b'x' | b'X' | b'o' | b'O' | b'b' | b'B');
+            if !radix_prefixed && raw.contains(['.', 'e', 'E']) {
+                self.err(
+                    span,
+                    &format!(
+                        "range bounds must be integer literals; `{raw}` is a decimal or exponent \
+                         form (a range enumerates whole numbers, so a fractional bound has no \
+                         meaning)"
+                    ),
+                );
+                return None;
+            }
+        }
+
+        if !n.value.is_finite() || n.value.fract() != 0.0 {
+            self.err(span, "range bounds must be integer literals");
+            return None;
+        }
+        if n.value.abs() > MAX_SAFE_INT {
+            self.err(
+                span,
+                "range bound is outside JavaScript's safe integer range, so the values it spans \
+                 cannot be enumerated exactly",
+            );
+            return None;
+        }
+
+        // `-0` and `0` are the same value in JS; `-(0.0) as i64` is 0.
+        let v = if neg { -n.value } else { n.value };
+        Some(v as i64)
     }
 
     fn check_binding(&mut self, binding: &ObjectPat) {
@@ -301,6 +588,115 @@ impl Checker<'_> {
                 }
             }
         }
+    }
+}
+
+/// The integer value of a numeric literal arm pattern, if it has one.
+/// `-0` collapses to `0` (they are `===` in JS — the same collapse the
+/// duplicate-arm key does).
+fn integer_literal_value(lit: &Lit, neg: bool) -> Option<i64> {
+    let Lit::Num(n) = lit else { return None };
+    let v = if neg { -n.value } else { n.value };
+    if !v.is_finite() || v.fract() != 0.0 || v.abs() > MAX_SAFE_INT {
+        return None;
+    }
+    Some(v as i64)
+}
+
+/// One literal-mode arm as the author wrote it, for diagnostics.
+#[derive(Clone, Copy)]
+struct SourceArm {
+    lo: i64,
+    hi: i64,
+    span: Span,
+    is_range: bool,
+}
+
+impl std::fmt::Display for SourceArm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_range {
+            write!(f, "{}..={}", self.lo, self.hi)
+        } else {
+            write!(f, "{}", self.lo)
+        }
+    }
+}
+
+/// Merged, disjoint, non-adjacent integer intervals — the coverage the
+/// arms seen so far have accumulated. Adjacency counts as overlap when
+/// merging (`[1,2] + [3,4] = [1,4]`) because the values are integers:
+/// nothing can sit between them.
+///
+/// Keyed by lower bound in a `BTreeMap` so every operation is O(log n)
+/// (0.5.0 security round, finding 3). The first cut rebuilt a `Vec` per
+/// insert, which is O(n²) over disjoint arms and REGRESSED pre-0.5.0
+/// code: a 50k plain-literal-arm match went from 0.11s to 2.3s, and the
+/// language server pays that per keystroke.
+///
+/// `merged` decides; `sources` only supplies the arm text and span for a
+/// diagnostic. They are separate because a merged interval is usually
+/// several arms, and naming the merge ("already covered by `0..=9`") sends
+/// the author looking for an arm they never wrote.
+#[derive(Default)]
+struct Coverage {
+    merged: BTreeMap<i64, i64>,
+    sources: BTreeMap<i64, SourceArm>,
+}
+
+impl Coverage {
+    /// The merged interval that fully contains `lo..=hi`, if any. Exact:
+    /// the intervals are merged, so a covered range lies inside exactly
+    /// one of them, and it is the last one starting at or before `lo`.
+    fn covering(&self, lo: i64, hi: i64) -> Option<(i64, i64)> {
+        let (&a, &b) = self.merged.range(..=lo).next_back()?;
+        (hi <= b).then_some((a, b))
+    }
+
+    /// A merged interval sharing any value with `lo..=hi`. Exact: if any
+    /// overlaps, so does the last one starting at or before `hi`.
+    fn overlap(&self, lo: i64, hi: i64) -> Option<(i64, i64)> {
+        let (&a, &b) = self.merged.range(..=hi).next_back()?;
+        (b >= lo).then_some((a, b))
+    }
+
+    /// An EARLIER source arm intersecting `lo..=hi`, for the message.
+    /// Best-effort by design: the verdict already came from `merged`, and
+    /// source arms can themselves overlap once an error has been reported,
+    /// in which case naming any intersecting one is still right.
+    fn source_hit(&self, lo: i64, hi: i64) -> Option<SourceArm> {
+        let (_, arm) = self.sources.range(..=hi).next_back()?;
+        (arm.hi >= lo).then_some(*arm)
+    }
+
+    /// Record `arm`, merging its interval into the coverage. Amortized
+    /// O(log n): every interval is removed at most once over the life of
+    /// the map.
+    fn insert(&mut self, arm: SourceArm) {
+        self.sources.entry(arm.lo).or_insert(arm);
+
+        let (mut start, mut end) = (arm.lo, arm.hi);
+        // Absorb a left neighbour that touches (adjacent counts).
+        if let Some((&a, &b)) = self.merged.range(..start).next_back()
+            && b.saturating_add(1) >= start
+        {
+            start = a;
+            end = end.max(b);
+        }
+        // Absorb every interval starting inside (or adjacent to) the run.
+        // Only the LAST removal can extend `end`, and the next interval
+        // after it starts at least two past its own end, so one pass is
+        // enough.
+        let keys: Vec<i64> = self
+            .merged
+            .range(start..=end.saturating_add(1))
+            .map(|(&a, _)| a)
+            .collect();
+        for k in keys {
+            if let Some(b) = self.merged.remove(&k) {
+                end = end.max(b);
+            }
+        }
+        self.merged.insert(start, end);
     }
 }
 
@@ -1059,9 +1455,57 @@ impl Visit for Checker<'_> {
         if u.members.is_empty() {
             self.err(u.span, "union must have at least one member");
         }
-        let mut seen: HashSet<&swc_atoms::Wtf8Atom> = HashSet::with_capacity(u.members.len());
+        // Span-free identity, exactly like the duplicate-match-arm key:
+        // `Debug` on a literal embeds spans, which would make every member
+        // unique. Numbers key on the VALUE, so `-0`/`0` and `1`/`1.0` are
+        // the same member — as they are to TypeScript, which would emit a
+        // silently-deduplicated literal union type otherwise.
+        let mut seen: HashSet<String> = HashSet::with_capacity(u.members.len());
         for m in &u.members {
-            if !seen.insert(&m.value) {
+            let key = match &m.lit {
+                Lit::Str(s) => format!("s:{:?}", s.value),
+                Lit::Num(n) => {
+                    let v = if m.neg { -n.value } else { n.value };
+                    // BY VALUE, not by raw text — the mirror image of the
+                    // range-bound rule in `range_bound`, and deliberately
+                    // so (0.5.0 review, code finding 9). A member is a
+                    // literal TYPE and is never enumerated, so its written
+                    // form carries no obligation: `1e3` is a perfectly good
+                    // way to say 1000. What matters is that `1` and `1.0`
+                    // are the SAME literal type to TypeScript, which would
+                    // deduplicate them silently and leave `values` longer
+                    // than the type — the value rule is what turns that
+                    // into one duplicate-member error. A range BOUND is the
+                    // opposite: it starts an enumeration, so `4e2..=4e3`
+                    // has to be rejected on its text however whole its
+                    // value is.
+                    //
+                    // Fractional members are rejected in v1: the guard and
+                    // the `values` tuple work either way, but a float
+                    // vocabulary is almost always a modelling mistake, and
+                    // widening later is cheap while narrowing is breaking.
+                    if !v.is_finite() || v.fract() != 0.0 {
+                        self.err(
+                            m.span,
+                            "zts `union` members must be whole numbers in v1; use a plain type \
+                             alias for a fractional vocabulary",
+                        );
+                        continue;
+                    }
+                    format!("n:{}", v + 0.0)
+                }
+                // The parser admits string and number literals only, but
+                // ZtsUnionDecl is public API — defend here too, or a
+                // hand-built member would reach lowering unchecked.
+                other => {
+                    self.err(
+                        m.span,
+                        "zts `union` members must be string or number literals",
+                    );
+                    format!("x:{:?}", other.span())
+                }
+            };
+            if !seen.insert(key) {
                 self.err(m.span, "duplicate union member");
             }
         }
@@ -1071,6 +1515,59 @@ impl Visit for Checker<'_> {
     fn visit_zts_newtype_decl(&mut self, n: &ZtsNewtypeDecl) {
         self.note_global_this_shadow(&n.ident);
         n.visit_children_with(self);
+    }
+
+    // The TYPE plane of the `__zts` reservation. Deliberately only the
+    // `__zts` check and not the whole of `note_global_this_shadow`:
+    //
+    // - a `type globalThis = X` ALIAS lives purely in the type plane and
+    //   cannot shadow the VALUE the absurd helper reaches through, so
+    //   pushing it onto `global_this_decls` would be a false positive.
+    //   (`namespace globalThis { ... }` is a different story — it DOES
+    //   reach the value plane. Its failure mode is a loud false-RED: a
+    //   TS2339 for `Error` on generated code, confusing but sound. Giving
+    //   it the friendlier zts diagnostic is a message-quality improvement,
+    //   not a soundness fix, and is deliberately out of scope here.)
+    // - `not` is reserved in expression positions only, so a type or
+    //   namespace named `not` parses today and rejecting it would be an
+    //   unrelated break.
+
+    fn visit_ts_type_alias_decl(&mut self, d: &TsTypeAliasDecl) {
+        self.note_zts_reserved_ident(&d.id);
+        d.visit_children_with(self);
+    }
+
+    fn visit_ts_interface_decl(&mut self, d: &TsInterfaceDecl) {
+        self.note_zts_reserved_ident(&d.id);
+        d.visit_children_with(self);
+    }
+
+    fn visit_ts_type_param(&mut self, p: &TsTypeParam) {
+        // `<__ztsRange0 extends number>` shadows inside the whole
+        // signature and body — same forgery, different scope.
+        self.note_zts_reserved_ident(&p.name);
+        p.visit_children_with(self);
+    }
+
+    fn visit_ts_module_decl(&mut self, d: &TsModuleDecl) {
+        // `namespace __ztsX { export type ... }` plus a `__ztsX.Y`
+        // reference is the same shadow one indirection away.
+        if let TsModuleName::Ident(id) = &d.id {
+            self.note_zts_reserved_ident(id);
+        }
+        d.visit_children_with(self);
+    }
+
+    fn visit_ts_import_equals_decl(&mut self, d: &TsImportEqualsDecl) {
+        // `import X = Ns.Type;` binds a TYPE name (and a value name) in the
+        // enclosing scope — the LAST such binder in the AST, and the one
+        // that survived round 1 of this fix. Reproduced: inside a
+        // namespace, `import __ztsRange0 = Helpers.Wide;` re-points a
+        // hoisted range alias at `number` and a 2-of-5 match certifies
+        // exhaustive with tsc exiting 0. `export import` and nested
+        // namespaces are the same route.
+        self.note_zts_reserved_ident(&d.id);
+        d.visit_children_with(self);
     }
 
     fn visit_ts_enum_decl(&mut self, e: &TsEnumDecl) {

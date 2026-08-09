@@ -1,0 +1,8 @@
+const a = match (n) {
+  1.5..=9 => "fractional",
+  _ => "other",
+};
+const b = match (n) {
+  4e2..=4e3 => "exponent",
+  _ => "other",
+};

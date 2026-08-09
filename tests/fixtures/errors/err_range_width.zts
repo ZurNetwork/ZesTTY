@@ -1,0 +1,6 @@
+// The width cap is a DoS control: a range arm expands to one literal type
+// per value, so an unbounded range would be billions of nodes.
+const a = match (n) {
+  0..=2000 => "wide",
+  _ => "other",
+};

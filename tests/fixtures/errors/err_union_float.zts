@@ -1,0 +1,1 @@
+union Ratio = 0.5 | 1.5;

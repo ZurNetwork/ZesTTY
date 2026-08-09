@@ -1,0 +1,8 @@
+// A ranged match over an OPEN `number` with no `_`: this compiles, and
+// tsc must REJECT it — a range cannot prove it covers `number`. The
+// compiler never decides whether `_` is required; tsc does.
+export function digit(n: number): string {
+  return match (n) {
+    0..=9 => "digit",
+  };
+}

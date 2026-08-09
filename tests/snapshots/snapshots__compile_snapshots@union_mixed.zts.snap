@@ -1,0 +1,32 @@
+---
+source: tests/snapshots.rs
+expression: out.code
+input_file: tests/fixtures/union_mixed.zts
+---
+import { __ztsAbsurd } from "@zestty/core";
+// A vocabulary that mixes strings and numbers (0.5.0). The ONLY thing the
+// mix changes is the guard's parameter type — `string | number`, chosen
+// from the member shapes, never from a type.
+type Ans = 42 | "unknown";
+const Ans = {
+    values: [
+        42,
+        "unknown"
+    ] as const,
+    has: (__ztsRaw: string | number): __ztsRaw is Ans =>Ans.values.indexOf(__ztsRaw as Ans) !== -1
+};
+export function toAns(raw: string | number): Ans {
+    return Ans.has(raw) ? raw : "unknown";
+}
+export function describe(a: Ans): string {
+    return ((__m)=>{
+        if (__m === 42) {
+            return "the answer";
+        }
+        if (__m === "unknown") {
+            return "no idea";
+        }
+        return __ztsAbsurd(__m);
+    })(a);
+}
+console.log(Ans.values.length, describe(toAns(42)), describe(toAns("nope")));

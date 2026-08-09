@@ -1,0 +1,13 @@
+// Ranges over a CLOSED numeric literal union: the payload case. Every
+// member is covered by some range, so the keystone discharges and tsc
+// proves exhaustiveness — no `_` needed, and no `_` allowed to hide a gap.
+type HttpStatus = 200 | 201 | 204 | 301 | 404 | 418 | 500 | 503;
+
+export function statusClass(s: HttpStatus): string {
+  return match (s) {
+    200..=299 => "success",
+    300..=399 => "redirect",
+    400..=499 => "client error",
+    500..=599 => "server error",
+  };
+}

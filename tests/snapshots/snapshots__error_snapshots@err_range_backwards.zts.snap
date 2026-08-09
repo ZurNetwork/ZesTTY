@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_range_backwards.zts
+---
+error: range lower bound `499` is greater than its upper bound `400`; zts ranges are inclusive and must be written low-to-high (`400..=499`)
+ --> tests/fixtures/errors/err_range_backwards.zts:2:3
+  |
+2 |   499..=400 => "backwards",
+  |   ^^^^^^^^^

@@ -515,12 +515,89 @@ fn lower_newtype(n: &ZtsNewtypeDecl, impls: Vec<ZtsImplDecl>) -> (Decl, Decl) {
 ///         Level.values.indexOf(__ztsRaw as Level) !== -1,
 /// };
 /// ```
+///
+/// Since 0.5.0 members may also be number literals, and a vocabulary may
+/// mix the two. The ONLY thing that changes is the guard's parameter type,
+/// chosen from the member set by syntax alone: `string` for an all-string
+/// union (byte-identical to what 0.4.x emitted — snapshot-pinned),
+/// `number` for an all-numeric one, `string | number` for a mixed one.
+/// Everything else — the `as const` tuple, the ES5-clean `indexOf` guard,
+/// the cast on the ARGUMENT rather than the receiver — is unchanged and
+/// load-bearing for the reasons recorded below.
 fn lower_union(u: &ZtsUnionDecl, impls: Vec<ZtsImplDecl>) -> (Decl, Decl) {
-    let str_kw = || {
-        Box::new(TsType::TsKeywordType(TsKeywordType {
-            span: u.span,
-            kind: TsKeywordTypeKind::TsStringKeyword,
-        }))
+    let keyword = |kind: TsKeywordTypeKind| {
+        Box::new(TsType::TsKeywordType(TsKeywordType { span: u.span, kind }))
+    };
+    // The guard's parameter type, from the member SHAPES — never from a
+    // type (the type-plane rule). A `number` parameter on a string union
+    // would reject every real call site, and `string | number` everywhere
+    // would silently widen the existing string unions' guard.
+    let raw_ty = || {
+        let has_str = u.members.iter().any(|m| matches!(m.lit, Lit::Str(..)));
+        let has_num = u.members.iter().any(|m| matches!(m.lit, Lit::Num(..)));
+        match (has_str, has_num) {
+            (true, true) => Box::new(TsType::TsUnionOrIntersectionType(
+                TsUnionOrIntersectionType::TsUnionType(TsUnionType {
+                    span: u.span,
+                    types: vec![
+                        keyword(TsKeywordTypeKind::TsStringKeyword),
+                        keyword(TsKeywordTypeKind::TsNumberKeyword),
+                    ],
+                }),
+            )),
+            (false, true) => keyword(TsKeywordTypeKind::TsNumberKeyword),
+            // All-string, and the defensive empty case (the parser cannot
+            // produce a memberless union; semantic rejects one anyway).
+            _ => keyword(TsKeywordTypeKind::TsStringKeyword),
+        }
+    };
+    // One member as a TYPE literal and as a VALUE expression. The sign
+    // lives on the member, not the literal, so it is reapplied here: the
+    // value side gets a real unary minus (the same shape a negative
+    // literal match arm lowers to), and the type side folds the sign into
+    // the literal's RAW TEXT.
+    //
+    // Raw, not just the negated value (0.5.0 review, security finding 6):
+    // dropping it makes codegen re-render from the f64, so `-0x10` emits as
+    // `-16` and `-1e2` as `-100`. The two planes would then disagree about
+    // what the author wrote — `values: [-0x10]` beside `type M = -16` — and
+    // a vocabulary chosen for its notation (masks, exponents) silently
+    // loses it. Positive members already keep their raw; negatives must
+    // too.
+    let member_ts_lit = |m: &ZtsUnionMember| -> Box<TsType> {
+        let lit = match (&m.lit, m.neg) {
+            (Lit::Num(n), true) => TsLit::Number(Number {
+                span: n.span,
+                value: -n.value,
+                raw: n.raw.as_ref().map(|raw| format!("-{raw}").into()),
+            }),
+            (Lit::Num(n), false) => TsLit::Number(n.clone()),
+            (Lit::Str(s), _) => TsLit::Str(s.clone()),
+            // Unreachable through the parser (string and number only) and
+            // rejected by the semantic pass, but ZtsUnionDecl is public
+            // API. Fail CLOSED with `never`: the vocabulary type then has
+            // an uninhabited member and tsc rejects the emitted `values`
+            // entry, instead of us inventing a literal nobody wrote.
+            _ => {
+                return Box::new(TsType::TsKeywordType(TsKeywordType {
+                    span: m.span,
+                    kind: TsKeywordTypeKind::TsNeverKeyword,
+                }));
+            }
+        };
+        Box::new(TsType::TsLitType(TsLitType { span: m.span, lit }))
+    };
+    let member_expr = |m: &ZtsUnionMember| -> Box<Expr> {
+        let lit = Expr::Lit(m.lit.clone());
+        Box::new(if m.neg {
+            Expr::Unary(UnaryExpr {
+                span: m.span,
+                op: UnaryOp::Minus,
+                arg: Box::new(lit),
+            })
+        } else {
+            lit
+        })
     };
     let name_ty = || {
         Box::new(TsType::TsTypeRef(TsTypeRef {
@@ -532,23 +609,11 @@ fn lower_union(u: &ZtsUnionDecl, impls: Vec<ZtsImplDecl>) -> (Decl, Decl) {
 
     // type Name = 'a' | 'b';
     let union_ty: Box<TsType> = match u.members.len() {
-        1 => Box::new(TsType::TsLitType(TsLitType {
-            span: u.members[0].span,
-            lit: TsLit::Str(u.members[0].clone()),
-        })),
+        1 => member_ts_lit(&u.members[0]),
         _ => Box::new(TsType::TsUnionOrIntersectionType(
             TsUnionOrIntersectionType::TsUnionType(TsUnionType {
                 span: u.span,
-                types: u
-                    .members
-                    .iter()
-                    .map(|m| {
-                        Box::new(TsType::TsLitType(TsLitType {
-                            span: m.span,
-                            lit: TsLit::Str(m.clone()),
-                        }))
-                    })
-                    .collect(),
+                types: u.members.iter().map(member_ts_lit).collect(),
             }),
         )),
     };
@@ -571,7 +636,7 @@ fn lower_union(u: &ZtsUnionDecl, impls: Vec<ZtsImplDecl>) -> (Decl, Decl) {
                 .map(|m| {
                     Some(ExprOrSpread {
                         spread: None,
-                        expr: Box::new(Expr::Lit(Lit::Str(m.clone()))),
+                        expr: member_expr(m),
                     })
                 })
                 .collect(),
@@ -632,7 +697,7 @@ fn lower_union(u: &ZtsUnionDecl, impls: Vec<ZtsImplDecl>) -> (Decl, Decl) {
             id: raw_ident.clone(),
             type_ann: Some(Box::new(TsTypeAnn {
                 span: u.span,
-                type_ann: str_kw(),
+                type_ann: raw_ty(),
             })),
         })],
         body: Box::new(BlockStmtOrExpr::Expr(Box::new(includes_call))),

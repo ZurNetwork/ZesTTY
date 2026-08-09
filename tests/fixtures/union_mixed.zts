@@ -1,0 +1,17 @@
+// A vocabulary that mixes strings and numbers (0.5.0). The ONLY thing the
+// mix changes is the guard's parameter type — `string | number`, chosen
+// from the member shapes, never from a type.
+union Ans = 42 | "unknown";
+
+export function toAns(raw: string | number): Ans {
+  return Ans.has(raw) ? raw : "unknown";
+}
+
+export function describe(a: Ans): string {
+  return match (a) {
+    42 => "the answer",
+    "unknown" => "no idea",
+  };
+}
+
+console.log(Ans.values.length, describe(toAns(42)), describe(toAns("nope")));

@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: diags
+input_file: tests/fixtures/errors/err_range_module_total.zts
+---
+error: range arms in this module enumerate 66560 values, over the zts limit of 65536: each value becomes a literal type in the generated TypeScript, and the language server re-expands all of them on every keystroke. Narrow the ranges, or match on `number` with a `_` arm.
+  --> tests/fixtures/errors/err_range_module_total.zts:73:3
+   |
+73 |   131072..=132095 => 64,
+   |   ^^^^^^^^^^^^^^^
