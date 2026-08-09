@@ -31,7 +31,7 @@ Read README.md before doing anything — it is the authoritative spec: locked fe
 
 ## Locked rules (from README — non-negotiable)
 
-- Scope: the four locked features (`match`, `Result` library, enums-with-data, expression `if`) plus Zuri-approved additions (`not` prefix sugar; newtypes + `?` in Phase 5; `union`; traits + universal absurd approved 2026-08-06 as Phase 6; Phase 7 = 0.4.0 approved 2026-08-06: readonly payloads + `mut`, `static_assert`, `T[+]`, traits v2, `zts-fmt` via dprint fork — see README). Anything else on the deferred list needs Zuri's explicit go-ahead. Traits extension requests: check "the permanent boundary" table in README feature 8 before designing.
+- Scope: the four locked features (`match`, `Result` library, enums-with-data, expression `if`) plus Zuri-approved additions (`not` prefix sugar; newtypes + `?` in Phase 5; `union`; traits + universal absurd approved 2026-08-06 as Phase 6; Phase 7 = 0.4.0 approved 2026-08-06: readonly payloads + `mut`, `static_assert`, `T[+]`, traits v2, `zts-fmt` via dprint fork; 0.5.0 approved 2026-08-08 via issue #73's design round: `..=` range patterns in match + numeric union members — see README for the locked constraints). Anything else on the deferred list needs Zuri's explicit go-ahead. Traits extension requests: check "the permanent boundary" table in README feature 8 before designing.
 - The type-plane rule (README, Conventions) governs all new features: guarantees live in emitted types, decisions from syntax alone, tsc is the oracle.
 - Discriminant field is `kind` (string literal), everywhere. `kind` is a reserved field name in enum variants.
 - Never emit TypeScript `enum` — tagged unions + factory functions only. TS `enum` member syntax in zts source is a hard error.
