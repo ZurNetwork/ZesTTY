@@ -989,8 +989,8 @@ claims verified against tsc 5.9.3/6.0.3/7.0.2). Scope:
       node (`MatchPat::Range` — the `not` lesson), with print rule +
       TextMate scope + nvim disposition per the parity rule.
 - [ ] 2. **Numeric and mixed union members**: `union HttpStatus =
-    200 | 404 | 500` (and mixed string/number) — `has(__ztsRaw:
-    number | string)` guard per member set; the enabling companion:
+200 | 404 | 500` (and mixed string/number) — `has(__ztsRaw:
+number | string)` guard per member set; the enabling companion:
       the range-pattern safety payload only materializes over closed
       numeric literal unions, which zts cannot declare today
       (feature 7 is string-only). Composition measured end-to-end in
