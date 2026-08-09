@@ -937,9 +937,74 @@ Disposition (Zuri): toolchain speed first; generated-output
 optimizations explicitly deferred — do not re-litigate emitted shapes
 without profiling evidence. Parked: prebuilds/marketplace publishing.
 
-**0.5.0 is unassigned** — reserved for language-feature work. Shelf
-candidates: match guards (design round first), trait default methods,
-Option/null-unification (likely 1.0-territory breaking).
+### 0.5.0 — range patterns + numeric unions (Zuri-approved 2026-08-08, issue #73)
+
+Design round complete (issue #73 has the full measured record; all
+claims verified against tsc 5.9.3/6.0.3/7.0.2). Scope:
+
+- [ ] 1. **Range patterns in match**: `400..=499 =>` — inclusive only
+      (exclusive `..` REJECTED: making `..` a token steals
+      `4..toString()`, a superset break — recorded like `not`/
+      `constrict`); integer literal bounds (± ok, `lo <= hi`, no
+      bigint/string v1 — bigint gets a dedicated "not supported"
+      diagnostic); width cap 1024 enforced in semantic.rs BEFORE
+      lowering allocates (a DoS control: an unbounded range is ~2·10⁹
+      AST nodes = LS OOM on a keystroke); range arms are literal-mode
+      arms (mixing with variant arms stays the existing error — today
+      it would be a silent no-op, verified).
+      LOWERING (the decisive design, "shape 5" of the round): the arm
+      becomes `if (__ztsInRange<__ztsRangeN>(__m, lo, hi))` where
+      `__ztsRangeN = lo | lo+1 | … | hi` is a hoisted ERASED type
+      alias and `__ztsInRange` is a `@zestty/core` type predicate
+      (`__v is T`, parameter `unknown` so mixed unions work,
+      integer-gated via `% 1 === 0` — ES5-clean, `Number.isInteger`
+      would raise the lib floor). A predicate narrows WITHOUT
+      comparing, which is why this shape lives where every other died:
+      relational comparisons narrow nothing (all three checkers);
+      switch-fallthrough/===-expansion narrows but tsc rejects every
+      expanded literal not in the union (TS2678/TS2367) and syntax
+      alone can't know which those are; type-level Enumerate hits
+      TS2589 at absolute bound ~1000 (width-10 `Enumerate<4000,4010>`
+      fails). Type-plane cost ≈ zero to width 10,000 (measured).
+      EXHAUSTIVENESS RULE (from syntax alone): a range arm changes
+      nothing about the tail — no `_` means the absurd tail, exactly
+      as today; the compiler NEVER decides whether `_` is required,
+      tsc does (closed numeric literal union → keystone discharges;
+      open `number` → TS2345 names it and the author adds `_`).
+      NEW COMPILE-ERROR CLASS (ships with the feature): syntactic
+      reachability — overlapping/covered range and literal arms are
+      semantic errors via integer-interval merging (tsc is silent on
+      covered range arms, verified); extends the existing
+      duplicate-literal-arm loop.
+      Fork discipline: `..=` is a NEW TOKEN — Token is repr(u8) with
+      ordinal-range classifiers, so "compile errors are the checklist"
+      FAILS for tokens: insert next to DotDotDot, register
+      before_expr/starts_expr EXPLICITLY (no fallthrough), and build
+      crates/swc_ecma_lexer too (second token type, broken twice
+      before). Lexer: `read_number` declines the trailing `.` only
+      when the next two bytes are `.=` (so `4..toString()` survives);
+      `read_token_dot` grows a DotDotEq branch (handles spaced
+      `400 ..= 499`). Speculation window: zero widening needed — arm
+      parsing is outside the rewind path. The pattern is a REAL AST
+      node (`MatchPat::Range` — the `not` lesson), with print rule +
+      TextMate scope + nvim disposition per the parity rule.
+- [ ] 2. **Numeric and mixed union members**: `union HttpStatus =
+200 | 404 | 500` (and mixed string/number) — `has(__ztsRaw:
+number | string)` guard per member set; the enabling companion:
+      the range-pattern safety payload only materializes over closed
+      numeric literal unions, which zts cannot declare today
+      (feature 7 is string-only). Composition measured end-to-end in
+      the round (wire guard → exhaustive ranged match).
+- [ ] 3. Release 0.5.0.
+
+HONEST SAFETY STORY (recorded, unembellished): range patterns do not
+eliminate a runtime bug class; they remove the main practical reason
+authors reach for `_` — which disables the keystone for the ENTIRE
+match — and they add the overlap/unreachable-arm compile errors.
+
+Remaining shelf (unassigned): trait default methods,
+Option/null-unification (likely 1.0-territory breaking), bigint
+ranges.
 
 ### Phase 3 — DX
 
