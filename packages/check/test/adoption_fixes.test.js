@@ -165,3 +165,74 @@ export const r = match (t) {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("#73: a committed twin with a range arm is not permanently stale", () => {
+  // The staleness comparison re-compiles the source and diffs it against
+  // the committed twin, choosing preamble mode from what the twin already
+  // imports. That detection used to match the exact specifier list
+  // `{ __ztsAbsurd }`; a range arm adds `__ztsInRange`, so the twin looked
+  // like inline mode, the fresh compile inlined the preamble, and the diff
+  // never matched again — every committed range twin read stale forever.
+  const dir = mkdtempSync(join(tmpdir(), "zts-rangetwin-"));
+  try {
+    const src = `type Code = 200 | 404 | 500;
+declare const c: Code;
+
+export const label = match (c) {
+  200..=299 => "ok",
+  400..=499 => "client",
+  500..=599 => "server",
+};
+`;
+    writeFileSync(join(dir, "r.zts"), src);
+    linkCore(dir);
+    generateTwins(dir, { log: () => {} });
+
+    const twin = readFileSync(join(dir, "r.ts"), "utf8");
+    assert.match(
+      twin,
+      /^import \{ __ztsAbsurd, __ztsInRange \} from "@zestty\/core";$/m,
+      "a range twin must import both preamble helpers",
+    );
+
+    // The freshly generated twin must read CLEAN, not stale.
+    const lines = [];
+    const code = ztsCheck(dir, { log: (l) => lines.push(l) });
+    assert.equal(code, 0, lines.join("\n"));
+    assert.doesNotMatch(lines.join("\n"), /stale committed twin/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#73: a wildcard-terminated range twin imports only __ztsInRange", () => {
+  // The other end of the same bug: with a `_` arm there is no keystone at
+  // all, so the specifier list is `{ __ztsInRange }` — nothing like the
+  // pattern the old detection looked for.
+  const dir = mkdtempSync(join(tmpdir(), "zts-rangetwin-w-"));
+  try {
+    writeFileSync(
+      join(dir, "w.zts"),
+      `export const digit = (n: number): string =>
+  match (n) {
+    0..=9 => "digit",
+    _ => "other",
+  };
+`,
+    );
+    linkCore(dir);
+    generateTwins(dir, { log: () => {} });
+    const twin = readFileSync(join(dir, "w.ts"), "utf8");
+    assert.match(twin, /^import \{ __ztsInRange \} from "@zestty\/core";$/m);
+    assert.doesNotMatch(twin, /__ztsAbsurd/);
+
+    const lines = [];
+    assert.equal(
+      ztsCheck(dir, { log: (l) => lines.push(l) }),
+      0,
+      lines.join("\n"),
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
