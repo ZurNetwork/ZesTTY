@@ -7,6 +7,9 @@
       "include": "#zts-match-expression"
     },
     {
+      "include": "#zts-range-pattern"
+    },
+    {
       "include": "#zts-enum-declaration"
     },
     {
@@ -35,6 +38,21 @@
       "captures": {
         "1": {
           "name": "keyword.control.match.zts"
+        }
+      }
+    },
+    "zts-range-pattern": {
+      "comment": "`lo..=hi` \u2014 the inclusive range arm pattern (0.5.0). Anchored on the arm's `=>` so the rule only fires in match-arm position; `..=` is not valid TypeScript anywhere, so no vanilla construct can be recoloured either way. Bounds are integer literals (decimal or radix-prefixed) with an optional `-`.",
+      "match": "(-?\\b(?:0[xXoObB][0-9A-Fa-f_]+|[0-9][0-9_]*)\\b)\\s*(\\.\\.=)\\s*(-?\\b(?:0[xXoObB][0-9A-Fa-f_]+|[0-9][0-9_]*)\\b)(?=\\s*=>)",
+      "captures": {
+        "1": {
+          "name": "constant.numeric.zts"
+        },
+        "2": {
+          "name": "keyword.operator.range.zts"
+        },
+        "3": {
+          "name": "constant.numeric.zts"
         }
       }
     },
@@ -73,7 +91,7 @@
               "include": "#zts-balanced-braces"
             },
             {
-              "comment": "`mut field: Type` — readonly opt-out (Phase 7 item 1); only before a field, `mut` elsewhere stays vanilla",
+              "comment": "`mut field: Type` \u2014 readonly opt-out (Phase 7 item 1); only before a field, `mut` elsewhere stays vanilla",
               "match": "\\b(mut)\\s+(?=[A-Za-z_$][\\w$]*\\s*:)",
               "captures": {
                 "1": {
@@ -106,7 +124,7 @@
       ]
     },
     "zts-impl-declaration": {
-      "comment": "`impl Trait for Type {` and traits v2 `impl From<string>, From<number> for Status {` — contextual, same-line-identifier commit rule as `union`/`newtype`; members are bare TS-style methods since 0.4.0 (`fn` removed — issue #60); bare `self` gets a language-variable scope inside this block only. The trait-list capture is colored by sub-patterns (idents as trait types, type-args via embedded TS).",
+      "comment": "`impl Trait for Type {` and traits v2 `impl From<string>, From<number> for Status {` \u2014 contextual, same-line-identifier commit rule as `union`/`newtype`; members are bare TS-style methods since 0.4.0 (`fn` removed \u2014 issue #60); bare `self` gets a language-variable scope inside this block only. The trait-list capture is colored by sub-patterns (idents as trait types, type-args via embedded TS).",
       "begin": "(?<![.$])\\b(impl)\\b\\s+([A-Za-z_$][\\w$]*(?:\\s*<[^>{;]*>)?(?:\\s*,\\s*[A-Za-z_$][\\w$]*(?:\\s*<[^>{;]*>)?)*)\\s+\\b(for)\\b\\s+([A-Za-z_$][\\w$]*)\\s*(\\{)",
       "beginCaptures": {
         "1": {
@@ -152,7 +170,7 @@
       ]
     },
     "zts-union-declaration": {
-      "comment": "`union Name = 'a' | 'b';` — contextual, same-line identifier + `=` commits (mirrors the `type`-alias rule; `const union = 2;` stays vanilla)",
+      "comment": "`union Name = 'a' | 'b';` \u2014 contextual, same-line identifier + `=` commits (mirrors the `type`-alias rule; `const union = 2;` stays vanilla)",
       "match": "(?<![.$])\\b(union)\\b\\s+([A-Za-z_$][\\w$]*)\\b(?=\\s*=)",
       "captures": {
         "1": {
@@ -164,7 +182,7 @@
       }
     },
     "zts-newtype-declaration": {
-      "comment": "`newtype Id = string;` — contextual, same-line identifier + `=` commits (mirrors the `type`-alias rule; `const newtype = 2;` stays vanilla)",
+      "comment": "`newtype Id = string;` \u2014 contextual, same-line identifier + `=` commits (mirrors the `type`-alias rule; `const newtype = 2;` stays vanilla)",
       "match": "(?<![.$])\\b(newtype)\\b\\s+([A-Za-z_$][\\w$]*)\\b(?=\\s*=)",
       "captures": {
         "1": {
@@ -176,7 +194,7 @@
       }
     },
     "zts-constrict-declaration": {
-      "comment": "`constrict A == B;` (Phase 7) — contextual, same-line WORD commit rule (covers idents and type-words like keyof); `const constrict = 1` / `constrict(x)` stay vanilla. Operands are types (embedded TS coloring); the operator gets a keyword scope.",
+      "comment": "`constrict A == B;` (Phase 7) \u2014 contextual, same-line WORD commit rule (covers idents and type-words like keyof); `const constrict = 1` / `constrict(x)` stay vanilla. Operands are types (embedded TS coloring); the operator gets a keyword scope.",
       "begin": "(?<![.$])\\b(constrict)\\b(?=[ \\t]+[A-Za-z_$])",
       "beginCaptures": {
         "1": {
@@ -195,7 +213,7 @@
       ]
     },
     "zts-not-operator": {
-      "comment": "`not` — RESERVED word since 0.4.0 (issue #60): always the negation operator in expression position, including `not(x)` and `not (x)`. Property positions (`obj.not`, `{ not: 1 }`) stay uncolored via the [.$] guard; a `:` right after means a property key, also uncolored.",
+      "comment": "`not` \u2014 RESERVED word since 0.4.0 (issue #60): always the negation operator in expression position, including `not(x)` and `not (x)`. Property positions (`obj.not`, `{ not: 1 }`) stay uncolored via the [.$] guard; a `:` right after means a property key, also uncolored.",
       "match": "(?<![.$])\\b(not)\\b(?![ \\t]*:)",
       "captures": {
         "1": {
