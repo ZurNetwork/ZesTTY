@@ -236,3 +236,48 @@ test("#73: a wildcard-terminated range twin imports only __ztsInRange", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("#73: an inline-preamble twin that imports from core stays clean", () => {
+  // The mirror image of the range-twin bug. Keying preamble detection on
+  // the MODULE matched any @zestty/core import, so a consumer who uses
+  // `Ok`/`Err` in a project committed with inline preambles looked like
+  // preamble mode: the fresh compile imported the helper instead of
+  // inlining it, and the twin read stale with no way back.
+  //
+  // A `__zts*` SPECIFIER is the signal user code cannot forge — the
+  // semantic pass rejects `__zts`-prefixed identifiers, import specifiers
+  // included.
+  const dir = mkdtempSync(join(tmpdir(), "zts-inlinecore-"));
+  try {
+    writeFileSync(
+      join(dir, "u.zts"),
+      `import { Ok } from "@zestty/core";
+type Code = 200 | 404;
+declare const c: Code;
+
+export const r = Ok(match (c) {
+  200 => "ok",
+  404 => "missing",
+});
+`,
+    );
+    linkCore(dir);
+    generateTwins(dir, { preambleImport: false, log: () => {} });
+
+    const twin = readFileSync(join(dir, "u.ts"), "utf8");
+    assert.match(twin, /^import \{ Ok \} from "@zestty\/core";$/m);
+    assert.match(
+      twin,
+      /function __ztsAbsurd\(/,
+      "inline mode must carry the helper, not import it",
+    );
+    assert.doesNotMatch(twin, /^import \{[^}]*__zts/m);
+
+    const lines = [];
+    const code = ztsCheck(dir, { log: (l) => lines.push(l) });
+    assert.equal(code, 0, lines.join("\n"));
+    assert.doesNotMatch(lines.join("\n"), /stale committed twin/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
